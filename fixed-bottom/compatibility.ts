@@ -87,13 +87,23 @@ export function preflightFixedBottomCompositor(
   if (!hasMethod(terminal, "write")) {
     return { ok: false, reason: "terminal.write is not callable" };
   }
+  for (const method of ["hideCursor", "showCursor"] as const) {
+    if (!hasMethod(terminal, method)) {
+      return { ok: false, reason: `terminal.${method} is not callable` };
+    }
+  }
 
   const rowsDescriptor = findPropertyDescriptor(terminal, "rows");
   if (!rowsDescriptor || typeof rowsDescriptor.get !== "function") {
     return { ok: false, reason: "terminal.rows must be backed by a getter descriptor" };
   }
-  if (!canShadow(terminal, "rows") || !canShadow(terminal, "write")) {
-    return { ok: false, reason: "terminal rows/write properties cannot be patched transactionally" };
+  if (
+    !canShadow(terminal, "rows")
+    || !canShadow(terminal, "write")
+    || !canShadow(terminal, "hideCursor")
+    || !canShadow(terminal, "showCursor")
+  ) {
+    return { ok: false, reason: "terminal rows/write/cursor properties cannot be patched transactionally" };
   }
 
   const requiredMethods = [
@@ -102,6 +112,9 @@ export function preflightFixedBottomCompositor(
     "requestRender",
     "addInputListener",
     "hasOverlay",
+    "start",
+    "stop",
+    "compositeOverlays",
     "compositeLineAt",
   ] as const;
   for (const method of requiredMethods) {
@@ -109,10 +122,13 @@ export function preflightFixedBottomCompositor(
       return { ok: false, reason: `TUI.${method} is not callable` };
     }
   }
-  for (const method of ["render", "doRender", "compositeLineAt"] as const) {
+  for (const method of ["render", "doRender", "start", "stop", "compositeOverlays", "compositeLineAt"] as const) {
     if (!canShadow(tui, method)) {
       return { ok: false, reason: `TUI.${method} cannot be patched transactionally` };
     }
+  }
+  if (typeof tui.stopped !== "boolean" || !writableOwnField(tui, "stopped")) {
+    return { ok: false, reason: "TUI.stopped must be a writable boolean field" };
   }
   if (!Array.isArray(tui.previousLines) || !writableOwnField(tui, "previousLines")) {
     return { ok: false, reason: "TUI.previousLines must be a writable array field" };

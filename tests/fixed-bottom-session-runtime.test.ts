@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SUPPORTED_PI_VERSION } from "../fixed-bottom/compatibility.ts";
-import type { FixedBottomCompositor } from "../fixed-bottom/compositor.ts";
+import type {
+  FixedBottomCompositor,
+  FixedBottomDisposeOptions,
+} from "../fixed-bottom/compositor.ts";
 import { CURSOR_MARKER } from "../fixed-bottom/contracts.ts";
 import {
   loadFixedBottomPlatform,
@@ -30,6 +33,7 @@ class FakeCompositor implements FixedBottomCompositor {
   jumpCalls = 0;
   repaintCalls = 0;
   disposeCalls = 0;
+  readonly disposeOptions: Array<FixedBottomDisposeOptions | undefined> = [];
   readonly order?: string[];
 
   constructor(order?: string[]) {
@@ -46,10 +50,11 @@ class FakeCompositor implements FixedBottomCompositor {
     this.order?.push("repaint");
   }
 
-  dispose(): void {
+  dispose(options?: FixedBottomDisposeOptions): void {
     if (this.disposed) return;
     this.disposed = true;
     this.disposeCalls += 1;
+    this.disposeOptions.push(options);
     this.order?.push("dispose");
   }
 }
@@ -214,7 +219,7 @@ test("installs without autoplay for reload, new, resume, and fork", async () => 
     await runtime.start({ reason }, context);
     assert.equal(introCalls, 0, reason);
     assert.equal(installCalls, 1, reason);
-    runtime.shutdown();
+    runtime.shutdown({ reason: "reload" });
   }
 });
 
@@ -338,7 +343,7 @@ test("ignores late async startup work after shutdown invalidates the generation"
   });
 
   const starting = runtime.start({ reason: "reload" }, context);
-  runtime.shutdown();
+  runtime.shutdown({ reason: "reload" });
   resolvePlatform(platform());
   await starting;
 
@@ -401,6 +406,26 @@ test("manual intro preserves the non-TUI error without loading platform code", a
   ]]);
 });
 
+test("shutdown quiesces the host only for quit and uses ordinary disposal for replacements", async () => {
+  for (const reason of ["quit", "reload", "new", "resume", "fork"]) {
+    const { context } = createContext();
+    const compositor = new FakeCompositor();
+    const runtime = new FixedBottomSessionRuntime({
+      loadPlatform: async () => platform(),
+      installCompositor: () => ({ installed: true, compositor }),
+    });
+
+    await runtime.start({ reason: "reload" }, context);
+    runtime.shutdown({ reason });
+
+    assert.deepEqual(
+      compositor.disposeOptions,
+      reason === "quit" ? [{ quiesceHost: true }] : [undefined],
+      reason,
+    );
+  }
+});
+
 test("shutdown invalidates first, disposes once, clears bootstrap state, and drops runtime refs", async () => {
   const order: string[] = [];
   const { context, state } = createContext("tui", { id: "tui" }, order);
@@ -414,12 +439,13 @@ test("shutdown invalidates first, disposes once, clears bootstrap state, and dro
   const bootstrapKey = state.widgetCalls[0].key;
   order.length = 0;
 
-  runtime.shutdown();
-  runtime.shutdown();
+  runtime.shutdown({ reason: "reload" });
+  runtime.shutdown({ reason: "reload" });
   runtime.input();
 
   assert.deepEqual(order, ["dispose", "widget:remove"]);
   assert.equal(compositor.disposeCalls, 1);
+  assert.deepEqual(compositor.disposeOptions, [undefined]);
   assert.equal(compositor.jumpCalls, 0);
   assert.deepEqual(
     state.widgetCalls.map((call) => [call.key, typeof call.content]),

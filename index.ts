@@ -12,8 +12,8 @@ export default function piIntroExtension(
     void runtime.start(event, context as FixedBottomSessionContext);
   });
 
-  pi.on("session_shutdown", () => {
-    runtime.shutdown();
+  pi.on("session_shutdown", (event) => {
+    runtime.shutdown(event);
   });
 
   pi.on("input", () => runtime.input());

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   installFixedBottomCompositor,
+  tailRows,
   type FixedBottomCompositor,
 } from "../fixed-bottom/compositor.ts";
 import { SUPPORTED_PI_VERSION } from "../fixed-bottom/compatibility.ts";
@@ -13,6 +14,8 @@ import {
   FakeTui,
   publicSemantics,
 } from "./fixtures/fixed-bottom-fakes.ts";
+
+const PI_SEGMENT_RESET = "\x1b[0m\x1b]8;;\x07";
 
 function installFixture(rows = 12): {
   terminal: FakeTerminal;
@@ -65,6 +68,15 @@ function assertSafeWrites(writes: readonly string[]): void {
     assert.equal(occurrences(output, "\x1b[?2026h"), 1);
     assert.equal(occurrences(output, "\x1b[?2026l"), 1);
   }
+
+  const joined = writes.join("");
+  const alternateScreenOff = joined.indexOf("\x1b[?1049l");
+  if (alternateScreenOff !== -1) {
+    const afterRestore = joined.slice(alternateScreenOff + "\x1b[?1049l".length);
+    assert.ok(!afterRestore.includes("\x1b[2K"), "must not erase cells after CSI ?1049l");
+    assert.ok(!afterRestore.includes("\x1b[0K"), "must not erase line tails after CSI ?1049l");
+    assert.ok(!afterRestore.includes("\x1b_Ga=d"), "must not delete Kitty images after CSI ?1049l");
+  }
 }
 
 function assertClearsRows(output: string, rows: readonly number[]): void {
@@ -72,6 +84,15 @@ function assertClearsRows(output: string, rows: readonly number[]): void {
     assert.ok(output.includes(`\x1b[${row};1H\x1b[2K`), `expected an explicit clear for row ${row}`);
   }
 }
+
+test("tailRows returns a bounded copy without mutating its input", () => {
+  const lines = ["one", "two", "three", "four"];
+
+  assert.deepEqual(tailRows(lines, 2), ["three", "four"]);
+  assert.deepEqual(tailRows(lines, 20), lines);
+  assert.deepEqual(tailRows(lines, 0), []);
+  assert.deepEqual(lines, ["one", "two", "three", "four"]);
+});
 
 test("install paints the transcript reservation and canonical cluster at the terminal bottom", () => {
   const { terminal, tui, compositor } = installFixture();
@@ -81,11 +102,11 @@ test("install paints the transcript reservation and canonical cluster at the ter
   assert.match(output, /\x1b\[1;6r/);
   assert.ok(output.includes("\x1b[?1002h\x1b[?1006h"));
   assert.match(output, /TUI\(rows=6\):transcript-7\|transcript-8\|transcript-9\|transcript-10\|transcript-11\|transcript-12/);
-  assert.match(output, /\x1b\[7;1H\x1b\[2Kstatus/);
-  assert.match(output, /\x1b\[8;1H\x1b\[2Kabove-widget/);
-  assert.match(output, /\x1b\[9;1H\x1b\[2Keditor/);
-  assert.match(output, /\x1b\[10;1H\x1b\[2Kbelow-widget/);
-  assert.match(output, /\x1b\[11;1H\x1b\[2Kfooter/);
+  assert.ok(output.includes(`\x1b[7;1Hstatus${PI_SEGMENT_RESET}\x1b[0K`));
+  assert.ok(output.includes(`\x1b[8;1Habove-widget${PI_SEGMENT_RESET}\x1b[0K`));
+  assert.ok(output.includes(`\x1b[9;1Heditor${PI_SEGMENT_RESET}\x1b[0K`));
+  assert.ok(output.includes(`\x1b[10;1Hbelow-widget${PI_SEGMENT_RESET}\x1b[0K`));
+  assert.ok(output.includes(`\x1b[11;1Hfooter${PI_SEGMENT_RESET}\x1b[0K`));
   assert.equal(occurrences(output, "footer"), 1);
   assert.equal(terminal.rows, 6);
   assert.equal(tui.hardwareCursorRow, 8);
@@ -96,7 +117,8 @@ test("install paints the transcript reservation and canonical cluster at the ter
 test("fixed renders preserve stable Kitty IDs and delete only replaced or removed IDs", () => {
   const { terminal, tui, root, compositor } = installFixture();
   const kitty77 = "\x1b_Gf=100,i=77,r=2;QUJDRA==\x1b\\";
-  const kitty88 = "\x1b_Gf=100,i=88,r=2;RUZHSA==\x1b\\";
+  const changedKitty77 = "\x1b_Gf=100,i=77,r=2;RUZHSA==\x1b\\";
+  const kitty88 = "\x1b_Gf=100,i=88,r=2;SUpLTA==\x1b\\";
   const delete77 = "\x1b_Ga=d,d=I,i=77,q=2\x1b\\";
   const delete88 = "\x1b_Ga=d,d=I,i=88,q=2\x1b\\";
   root.widget.lines = [kitty77, ""];
@@ -109,15 +131,22 @@ test("fixed renders preserve stable Kitty IDs and delete only replaced or remove
 
   tui.doRender();
   const stableImageOutput = terminal.writes.at(-1) ?? "";
-  assert.equal(occurrences(stableImageOutput, kitty77), 1);
+  assert.equal(occurrences(stableImageOutput, kitty77), 0);
   assert.ok(!stableImageOutput.includes(delete77));
-  for (const row of [7, 8, 9, 10, 11]) {
+  for (const row of [7, 8, 9, 10, 11, 12]) {
     assert.equal(
-      occurrences(stableImageOutput, `\x1b[${row};1H\x1b[2K`),
-      1,
-      `stable geometry must clear row ${row} only once while repainting it`,
+      occurrences(stableImageOutput, `\x1b[${row};1H`),
+      0,
+      `stable frame must not clear or repaint fixed row ${row}`,
     );
   }
+
+  root.widget.lines = [changedKitty77, ""];
+  tui.doRender();
+  const changedSameIdOutput = terminal.writes.at(-1) ?? "";
+  assert.equal(occurrences(changedSameIdOutput, delete77), 1);
+  assert.equal(occurrences(changedSameIdOutput, changedKitty77), 1);
+  assert.ok(changedSameIdOutput.indexOf(delete77) < changedSameIdOutput.indexOf(changedKitty77));
 
   root.widget.lines = [kitty88, ""];
   tui.doRender();
@@ -135,16 +164,90 @@ test("fixed renders preserve stable Kitty IDs and delete only replaced or remove
   compositor.dispose();
 });
 
+test("overlay handoff deletes image IDs owned only by the prior overlay frame", () => {
+  const { terminal, tui, root, compositor } = installFixture();
+  const kitty77 = "\x1b_Gf=100,i=77,r=2;QUJDRA==\x1b\\";
+  const delete77 = "\x1b_Ga=d,d=I,i=77,q=2\x1b\\";
+
+  root.widget.lines = [kitty77, ""];
+  tui.overlayVisible = true;
+  tui.doRender();
+  const opened = terminal.writes.at(-1) ?? "";
+  assert.equal(occurrences(opened, kitty77), 1);
+
+  root.widget.lines = [];
+  tui.overlayVisible = false;
+  tui.doRender();
+  const closed = terminal.writes.at(-1) ?? "";
+  assert.ok(closed.includes(delete77));
+  assert.ok(!closed.includes(kitty77));
+
+  compositor.dispose();
+});
+
+test("overlay entry deletes image IDs owned only by the prior fixed transcript frame", () => {
+  const { terminal, tui, root, compositor } = installFixture();
+  const kitty77 = "\x1b_Gf=100,i=77,r=2;QUJDRA==\x1b\\";
+  const delete77 = "\x1b_Ga=d,d=I,i=77,q=2\x1b\\";
+  const transcriptLines = Array.from(
+    { length: 12 },
+    (_, index) => `transcript-${index + 1}`,
+  );
+  transcriptLines[6] = kitty77;
+  root.transcript.lines = transcriptLines;
+
+  tui.doRender();
+  const fixed = terminal.writes.at(-1) ?? "";
+  assert.equal(occurrences(fixed, kitty77), 1);
+  assert.ok(tui.previousKittyImageIds.has(77));
+
+  tui.overlayVisible = true;
+  tui.doRender();
+  const opened = terminal.writes.at(-1) ?? "";
+  assert.equal(occurrences(opened, delete77), 1);
+  assert.ok(!opened.includes(kitty77));
+
+  compositor.dispose();
+});
+
+test("fixed resize deletes image IDs omitted from the replacement transcript frame", () => {
+  const { terminal, tui, root, compositor } = installFixture();
+  const kitty77 = "\x1b_Gf=100,i=77,r=2;QUJDRA==\x1b\\";
+  const delete77 = "\x1b_Ga=d,d=I,i=77,q=2\x1b\\";
+  const transcriptLines = Array.from(
+    { length: 12 },
+    (_, index) => `transcript-${index + 1}`,
+  );
+  transcriptLines[6] = kitty77;
+  root.transcript.lines = transcriptLines;
+
+  tui.doRender();
+  assert.ok((terminal.writes.at(-1) ?? "").includes(kitty77));
+  assert.ok(tui.previousKittyImageIds.has(77));
+
+  terminal.setSize(40, 10);
+  tui.doRender();
+  const resized = terminal.writes.at(-1) ?? "";
+  assert.equal(occurrences(resized, delete77), 1);
+  assert.ok(!resized.includes(kitty77));
+
+  compositor.dispose();
+});
+
 test("visible overlays temporarily release the scroll region without switching screen buffers", () => {
   const { terminal, tui, compositor } = installFixture();
 
   tui.overlayVisible = true;
   tui.doRender();
   const suspended = terminal.writes.at(-1) ?? "";
+  assert.equal(tui.compositeOverlaysCallCount, 1);
+  assert.ok(tui.previousLines.length <= 12);
   assert.ok(suspended.includes("\x1b[r"));
   assert.ok(!suspended.includes("\x1b[?1049l"));
   assert.ok(!suspended.includes("\x1b[?1007h"));
+  assertClearsRows(suspended, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   assert.match(suspended, /TUI\(rows=12\):/);
+  assert.match(suspended, /fake-overlay/);
   assert.equal(occurrences(suspended, "footer"), 1);
   assert.equal(terminal.rows, 12);
   assert.deepEqual(tui.emitInput("\x1b[5~"), { consumed: false, data: "\x1b[5~" });
@@ -158,6 +261,7 @@ test("visible overlays temporarily release the scroll region without switching s
   const resumed = terminal.writes.at(-1) ?? "";
   assert.ok(!resumed.includes("\x1b[?1049h"));
   assert.ok(resumed.includes("\x1b[1;6r"));
+  assertClearsRows(resumed, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   assert.match(resumed, /TUI\(rows=6\):/);
   assert.equal(terminal.rows, 6);
 
@@ -172,8 +276,8 @@ test("resize updates the scroll region and keeps the cluster bottom-aligned", ()
   const output = terminal.writes.at(-1) ?? "";
   assert.ok(output.includes("\x1b[r\x1b[1;4r"));
   assert.match(output, /TUI\(rows=4\):transcript-9\|transcript-10\|transcript-11\|transcript-12/);
-  assert.ok(output.includes("\x1b[5;1H\x1b[2Kstatus"));
-  assert.ok(output.includes("\x1b[9;1H\x1b[2Kfooter"));
+  assert.ok(output.includes(`\x1b[5;1Hstatus${PI_SEGMENT_RESET}\x1b[0K`));
+  assert.ok(output.includes(`\x1b[9;1Hfooter${PI_SEGMENT_RESET}\x1b[0K`));
   assert.equal(terminal.rows, 4);
   assertSafeWrites(terminal.writes);
 
@@ -243,6 +347,7 @@ test("positions the hardware cursor from the public cursor marker", () => {
 
   assert.ok(!output.includes("\x1b_pi:c\x07"));
   assert.ok(output.includes("\x1b[9;5H\x1b[?25h"));
+  assert.deepEqual(terminal.directWrites, []);
 
   compositor.dispose();
 });
@@ -327,6 +432,7 @@ test("initial render failure rolls back every patch and registered hook without 
   const methods = {
     render: tui.render,
     doRender: tui.doRender,
+    compositeOverlays: tui.compositeOverlays,
     compositeLineAt: tui.compositeLineAt,
   };
   tui.seedRenderState(["initial-render-state"]);
@@ -348,10 +454,368 @@ test("initial render failure rolls back every patch and registered hook without 
   assert.equal(processTarget.exitListenerCount(), 0);
   assert.equal(tui.render, methods.render);
   assert.equal(tui.doRender, methods.doRender);
+  assert.equal(tui.compositeOverlays, methods.compositeOverlays);
   assert.equal(tui.compositeLineAt, methods.compositeLineAt);
   assert.equal(Object.hasOwn(terminal, "rows"), false);
   assert.equal(Object.hasOwn(terminal, "write"), false);
   assert.deepEqual(tuiRenderState(tui), initialState);
+});
+
+test("overlay composition failure is fail-closed before any body write", () => {
+  const root = createFakeRoot();
+  const terminal = new FakeTerminal();
+  const tui = new FakeTui(terminal, root.children);
+  const processTarget = new FakeProcess();
+  const methods = {
+    render: tui.render,
+    doRender: tui.doRender,
+    compositeOverlays: tui.compositeOverlays,
+    compositeLineAt: tui.compositeLineAt,
+  };
+  tui.seedRenderState(["committed-before-overlay-failure"]);
+  const initialState = tuiRenderState(tui);
+  tui.overlayVisible = true;
+  tui.throwOnCompositeOverlays = true;
+
+  const result = installFixedBottomCompositor({
+    tui,
+    runtimeVersion: SUPPORTED_PI_VERSION,
+    semantics: publicSemantics(),
+    processTarget,
+  });
+
+  assert.equal(result.installed, false);
+  assert.match(result.installed ? "" : result.reason, /overlay composition failed/);
+  assert.deepEqual(terminal.writes, []);
+  assert.deepEqual(tuiRenderState(tui), initialState);
+  assert.equal(tui.render, methods.render);
+  assert.equal(tui.doRender, methods.doRender);
+  assert.equal(tui.compositeOverlays, methods.compositeOverlays);
+  assert.equal(tui.compositeLineAt, methods.compositeLineAt);
+  assert.equal(tui.inputListeners.size, 0);
+  assert.equal(tui.removeInputListenerCount, 1);
+  assert.equal(processTarget.exitListenerCount(), 0);
+  assert.equal(Object.hasOwn(terminal, "rows"), false);
+  assert.equal(Object.hasOwn(terminal, "write"), false);
+});
+
+test("physical row invariant rejects oversized renderer state while output is captured", () => {
+  class OversizedStateTui extends FakeTui {
+    override doRender(): void {
+      super.doRender();
+      this.previousLines.push("overflow-row");
+    }
+  }
+
+  const root = createFakeRoot();
+  const terminal = new FakeTerminal();
+  const tui = new OversizedStateTui(terminal, root.children);
+  const processTarget = new FakeProcess();
+  const methods = {
+    render: tui.render,
+    doRender: tui.doRender,
+    start: tui.start,
+    stop: tui.stop,
+    compositeOverlays: tui.compositeOverlays,
+    compositeLineAt: tui.compositeLineAt,
+    hideCursor: terminal.hideCursor,
+    showCursor: terminal.showCursor,
+  };
+  tui.seedRenderState(["committed-before-row-overflow"]);
+  const initialState = tuiRenderState(tui);
+
+  const result = installFixedBottomCompositor({
+    tui,
+    runtimeVersion: SUPPORTED_PI_VERSION,
+    semantics: publicSemantics(),
+    processTarget,
+  });
+
+  assert.equal(result.installed, false);
+  assert.match(result.installed ? "" : result.reason, /rejected 7 rendered rows for 6-row fixed surface/);
+  assert.deepEqual(terminal.writes, []);
+  assert.deepEqual(terminal.directWrites, []);
+  assert.equal(terminal.stopCallCount, 0);
+  assert.equal(tui.stopped, false);
+  assert.deepEqual(tuiRenderState(tui), initialState);
+  assert.equal(tui.render, methods.render);
+  assert.equal(tui.doRender, methods.doRender);
+  assert.equal(tui.start, methods.start);
+  assert.equal(tui.stop, methods.stop);
+  assert.equal(tui.compositeOverlays, methods.compositeOverlays);
+  assert.equal(tui.compositeLineAt, methods.compositeLineAt);
+  assert.equal(terminal.hideCursor, methods.hideCursor);
+  assert.equal(terminal.showCursor, methods.showCursor);
+  assert.equal(tui.inputListeners.size, 0);
+  assert.equal(processTarget.exitListenerCount(), 0);
+});
+
+test("over-width render suppresses TUI stop side effects before fail-closed restoration", () => {
+  class OverWidthTui extends FakeTui {
+    override doRender(): void {
+      const lines = this.render(this.terminal.columns);
+      if (lines.some((line) => line.length > this.terminal.columns)) {
+        this.stop();
+        throw new Error("rendered line exceeds terminal width");
+      }
+      super.doRender();
+    }
+  }
+
+  const root = createFakeRoot();
+  const terminal = new FakeTerminal();
+  const tui = new OverWidthTui(terminal, root.children);
+  const processTarget = new FakeProcess();
+  const originalStop = tui.stop;
+  const originalHideCursor = terminal.hideCursor;
+  const originalShowCursor = terminal.showCursor;
+  const result = installFixedBottomCompositor({
+    tui,
+    runtimeVersion: SUPPORTED_PI_VERSION,
+    semantics: publicSemantics(),
+    processTarget,
+  });
+  assert.equal(result.installed, true, result.installed ? undefined : result.reason);
+  if (!result.installed) return;
+
+  root.transcript.lines = ["x".repeat(terminal.columns + 1)];
+  assert.doesNotThrow(() => tui.doRender());
+
+  assert.equal(result.compositor.disposed, true);
+  assert.equal(tui.stopped, false);
+  assert.equal(terminal.stopCallCount, 0);
+  assert.deepEqual(terminal.directWrites, []);
+  assert.ok(terminal.writes.every((output) => !output.includes("x".repeat(terminal.columns + 1))));
+  assert.equal(tui.stop, originalStop);
+  assert.equal(terminal.hideCursor, originalHideCursor);
+  assert.equal(terminal.showCursor, originalShowCursor);
+  assert.equal(Object.hasOwn(terminal, "rows"), false);
+  assert.equal(Object.hasOwn(terminal, "write"), false);
+});
+
+test("active duplicate start is an idempotent host lifecycle no-op", () => {
+  const { terminal, tui, compositor } = installFixture();
+  const writesBeforeStart = terminal.writes.length;
+  const directWritesBeforeStart = terminal.directWrites.length;
+
+  tui.start();
+
+  assert.equal(tui.startCallCount, 0);
+  assert.equal(terminal.startCallCount, 0);
+  assert.equal(terminal.writes.length, writesBeforeStart);
+  assert.equal(terminal.directWrites.length, directWritesBeforeStart);
+
+  compositor.dispose();
+});
+
+test("stop then dispose restores modes and terminal lifecycle exactly once", () => {
+  const { terminal, tui, compositor } = installFixture();
+
+  tui.stop();
+  const cleanup = terminal.writes.at(-1) ?? "";
+  const writesAfterStop = terminal.writes.length;
+  const directWritesAfterStop = terminal.directWrites.length;
+  assert.equal(occurrences(cleanup, "\x1b[?1049l"), 1);
+  assert.equal(terminal.stopCallCount, 1);
+  assert.deepEqual(tui.previousLines, []);
+  assert.deepEqual([...tui.previousKittyImageIds], []);
+  assert.equal(tui.previousWidth, -1);
+  assert.equal(tui.previousHeight, -1);
+  assert.equal(tui.cursorRow, 0);
+  assert.equal(tui.hardwareCursorRow, 0);
+  assert.equal(tui.maxLinesRendered, 0);
+  assert.equal(tui.previousViewportTop, 0);
+
+  tui.stop();
+  assert.equal(terminal.writes.length, writesAfterStop);
+  assert.equal(terminal.directWrites.length, directWritesAfterStop);
+  assert.equal(terminal.stopCallCount, 1);
+
+  compositor.dispose();
+  assert.equal(compositor.disposed, true);
+  assert.equal(terminal.writes.length, writesAfterStop);
+  assert.equal(terminal.directWrites.length, directWritesAfterStop);
+  assert.equal(terminal.stopCallCount, 1);
+  assert.equal(tui.start, FakeTui.prototype.start);
+  assert.equal(tui.stop, FakeTui.prototype.stop);
+});
+
+test("dispose then stop restores compositor mode once and delegates terminal stop once", () => {
+  const { terminal, tui, compositor } = installFixture();
+
+  compositor.dispose();
+  assert.equal(occurrences(terminal.writes.join(""), "\x1b[?1049l"), 1);
+  assert.equal(terminal.stopCallCount, 0);
+  assert.equal(tui.stopped, false);
+
+  tui.stop();
+  assert.equal(occurrences(terminal.writes.join(""), "\x1b[?1049l"), 1);
+  assert.equal(terminal.stopCallCount, 1);
+});
+
+test("quit disposal installs active host guards until original stop", () => {
+  const { terminal, tui, compositor } = installFixture();
+
+  compositor.dispose({ quiesceHost: true });
+
+  assert.equal(compositor.disposed, true);
+  assert.equal(tui.stopped, true);
+  assert.deepEqual(tui.previousLines, []);
+  assert.deepEqual([...tui.previousKittyImageIds], []);
+  assert.equal(tui.previousWidth, -1);
+  assert.equal(tui.previousHeight, -1);
+  assert.equal(tui.cursorRow, 0);
+  assert.equal(tui.hardwareCursorRow, 0);
+  assert.equal(tui.maxLinesRendered, 0);
+  assert.equal(tui.previousViewportTop, 0);
+  assert.equal(occurrences(terminal.writes.join(""), "\x1b[?1049l"), 1);
+  assert.equal(terminal.stopCallCount, 0);
+  assert.notEqual(tui.start, FakeTui.prototype.start);
+  assert.notEqual(tui.stop, FakeTui.prototype.stop);
+  assert.equal(Object.hasOwn(tui, "start"), true);
+  assert.equal(Object.hasOwn(tui, "stop"), true);
+
+  const guardedStart = tui.start;
+  const guardedStop = tui.stop;
+  tui.seedRenderState(["\x1b_Gf=100,i=91,r=1;QQ==\x1b\\"]);
+  const writesBeforeStart = terminal.writes.length;
+  const directWritesBeforeStart = terminal.directWrites.length;
+  guardedStart();
+
+  assert.equal(tui.startCallCount, 0);
+  assert.equal(terminal.startCallCount, 0);
+  assert.equal(terminal.writes.length, writesBeforeStart);
+  assert.equal(terminal.directWrites.length, directWritesBeforeStart);
+  assert.equal(tui.stopped, true);
+  assert.deepEqual(tui.previousLines, []);
+  assert.deepEqual([...tui.previousKittyImageIds], []);
+  assert.equal(tui.previousWidth, -1);
+  assert.equal(tui.previousHeight, -1);
+  assert.equal(tui.cursorRow, 0);
+  assert.equal(tui.hardwareCursorRow, 0);
+  assert.equal(tui.maxLinesRendered, 0);
+  assert.equal(tui.previousViewportTop, 0);
+
+  guardedStop();
+  assert.equal(terminal.writes.length, writesBeforeStart);
+  assert.equal(terminal.stopCallCount, 1);
+  assert.equal(tui.start, FakeTui.prototype.start);
+  assert.equal(tui.stop, FakeTui.prototype.stop);
+  assert.equal(Object.hasOwn(tui, "start"), false);
+  assert.equal(Object.hasOwn(tui, "stop"), false);
+
+  const directWritesAfterStop = terminal.directWrites.length;
+  guardedStop();
+  assert.equal(terminal.stopCallCount, 1);
+  assert.equal(terminal.directWrites.length, directWritesAfterStop);
+});
+
+test("quit disposal invalidates stale render state after suspended cleanup without stopping twice", () => {
+  const { terminal, tui, compositor } = installFixture();
+  tui.stop();
+  tui.seedRenderState(["stale-after-host-stop"]);
+  const writesAfterStop = terminal.writes.length;
+  const directWritesAfterStop = terminal.directWrites.length;
+
+  compositor.dispose({ quiesceHost: true });
+
+  assert.equal(compositor.disposed, true);
+  assert.equal(tui.stopped, true);
+  assert.deepEqual(tui.previousLines, []);
+  assert.deepEqual([...tui.previousKittyImageIds], []);
+  assert.equal(tui.previousWidth, -1);
+  assert.equal(tui.previousHeight, -1);
+  assert.equal(tui.cursorRow, 0);
+  assert.equal(tui.hardwareCursorRow, 0);
+  assert.equal(tui.maxLinesRendered, 0);
+  assert.equal(tui.previousViewportTop, 0);
+  assert.equal(terminal.writes.length, writesAfterStop);
+  assert.equal(terminal.directWrites.length, directWritesAfterStop);
+  assert.equal(terminal.stopCallCount, 1);
+  assert.notEqual(tui.start, FakeTui.prototype.start);
+  assert.notEqual(tui.stop, FakeTui.prototype.stop);
+  assert.equal(Object.hasOwn(tui, "start"), true);
+  assert.equal(Object.hasOwn(tui, "stop"), true);
+});
+
+test("quit guard restores exact host descriptors when original stop throws", () => {
+  class ThrowingQuitStopTui extends FakeTui {
+    override stop(): void {
+      super.stop();
+      throw new Error("quit host stop failed");
+    }
+  }
+
+  const root = createFakeRoot();
+  const terminal = new FakeTerminal();
+  const tui = new ThrowingQuitStopTui(terminal, root.children);
+  const originalStart = tui.start;
+  const originalStop = tui.stop;
+  tui.seedRenderState();
+  const result = installFixedBottomCompositor({
+    tui,
+    runtimeVersion: SUPPORTED_PI_VERSION,
+    semantics: publicSemantics(),
+    processTarget: new FakeProcess(),
+  });
+  assert.equal(result.installed, true, result.installed ? undefined : result.reason);
+  if (!result.installed) return;
+
+  result.compositor.dispose({ quiesceHost: true });
+  const guardedStop = tui.stop;
+
+  assert.throws(() => guardedStop(), /quit host stop failed/);
+  assert.equal(terminal.stopCallCount, 1);
+  assert.equal(tui.start, originalStart);
+  assert.equal(tui.stop, originalStop);
+  assert.equal(Object.hasOwn(tui, "start"), false);
+  assert.equal(Object.hasOwn(tui, "stop"), false);
+  assert.deepEqual(tui.previousLines, []);
+  assert.deepEqual([...tui.previousKittyImageIds], []);
+  assert.equal(tui.previousWidth, -1);
+  assert.equal(tui.previousHeight, -1);
+
+  assert.doesNotThrow(() => guardedStop());
+  assert.equal(terminal.stopCallCount, 1);
+});
+
+test("stop attempts original terminal shutdown and rethrows the first cleanup failure", () => {
+  class ThrowingStopTui extends FakeTui {
+    override stop(): void {
+      super.stop();
+      throw new Error("original stop failed");
+    }
+  }
+
+  const root = createFakeRoot();
+  const terminal = new FakeTerminal();
+  const tui = new ThrowingStopTui(terminal, root.children);
+  tui.seedRenderState();
+  const result = installFixedBottomCompositor({
+    tui,
+    runtimeVersion: SUPPORTED_PI_VERSION,
+    semantics: publicSemantics(),
+    processTarget: new FakeProcess(),
+  });
+  assert.equal(result.installed, true, result.installed ? undefined : result.reason);
+  if (!result.installed) return;
+  terminal.failOnWriteAttempt = terminal.writeAttemptCount + 1;
+  terminal.recordFailedWrite = true;
+
+  assert.throws(() => tui.stop(), /terminal write failed/);
+  const writesAfterStop = terminal.writes.length;
+  const directWritesAfterStop = terminal.directWrites.length;
+  assert.equal(terminal.stopCallCount, 1);
+
+  assert.doesNotThrow(() => tui.stop());
+  assert.equal(terminal.writes.length, writesAfterStop);
+  assert.equal(terminal.directWrites.length, directWritesAfterStop);
+  assert.equal(terminal.stopCallCount, 1);
+
+  result.compositor.dispose();
+  assert.equal(terminal.writes.length, writesAfterStop);
+  assert.equal(terminal.directWrites.length, directWritesAfterStop);
+  assert.equal(terminal.stopCallCount, 1);
 });
 
 test("terminal write failure still rolls back patches and hooks when no output is recorded", () => {
@@ -389,7 +853,12 @@ test("dispose is idempotent and restores descriptors, methods, listener, exit ho
   const methods = {
     render: tui.render,
     doRender: tui.doRender,
+    start: tui.start,
+    stop: tui.stop,
+    compositeOverlays: tui.compositeOverlays,
     compositeLineAt: tui.compositeLineAt,
+    hideCursor: terminal.hideCursor,
+    showCursor: terminal.showCursor,
   };
   const result = installFixedBottomCompositor({
     tui,
@@ -401,7 +870,12 @@ test("dispose is idempotent and restores descriptors, methods, listener, exit ho
   if (!result.installed) throw new Error(result.reason);
   assert.notEqual(tui.render, methods.render);
   assert.notEqual(tui.doRender, methods.doRender);
+  assert.notEqual(tui.start, methods.start);
+  assert.notEqual(tui.stop, methods.stop);
+  assert.notEqual(tui.compositeOverlays, methods.compositeOverlays);
   assert.notEqual(tui.compositeLineAt, methods.compositeLineAt);
+  assert.notEqual(terminal.hideCursor, methods.hideCursor);
+  assert.notEqual(terminal.showCursor, methods.showCursor);
   assert.equal(Object.hasOwn(terminal, "rows"), true);
   assert.equal(Object.hasOwn(terminal, "write"), true);
 
@@ -421,10 +895,16 @@ test("dispose is idempotent and restores descriptors, methods, listener, exit ho
   assert.equal(processTarget.exitListenerCount(), 0);
   assert.equal(tui.render, methods.render);
   assert.equal(tui.doRender, methods.doRender);
+  assert.equal(tui.start, methods.start);
+  assert.equal(tui.stop, methods.stop);
+  assert.equal(tui.compositeOverlays, methods.compositeOverlays);
   assert.equal(tui.compositeLineAt, methods.compositeLineAt);
+  assert.equal(terminal.hideCursor, methods.hideCursor);
+  assert.equal(terminal.showCursor, methods.showCursor);
   assert.equal(Object.hasOwn(terminal, "rows"), false);
   assert.equal(Object.hasOwn(terminal, "write"), false);
   assert.equal(terminal.rows, 12);
+  assertSafeWrites(terminal.writes);
 });
 
 test("process exit cleanup restores an entered mode exactly once", () => {
@@ -445,6 +925,7 @@ test("process exit cleanup restores an entered mode exactly once", () => {
   assert.equal(processTarget.exitListenerCount(), 0);
   assert.equal(Object.hasOwn(terminal, "rows"), false);
   assert.equal(Object.hasOwn(terminal, "write"), false);
+  assertSafeWrites(terminal.writes);
 });
 
 test("faithful fixture emits Pi full clears and mutates render state when raw dimensions differ", () => {
@@ -483,19 +964,19 @@ test("install aligns every faithful Pi differential field before capture and wri
   compositor.dispose();
 });
 
-test("raw grow and shrink clear the union of old and new fixed-row coordinates", () => {
+test("raw grow and shrink reset every current physical row", () => {
   const { terminal, tui, compositor } = installFixture();
 
   terminal.setSize(40, 14);
   tui.doRender();
   const grown = terminal.writes.at(-1) ?? "";
-  assertClearsRows(grown, [7, 8, 9, 10, 11, 12, 13, 14]);
+  assertClearsRows(grown, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
   assert.match(grown, /TUI\(rows=8\):/);
 
   terminal.setSize(40, 10);
   tui.doRender();
   const shrunk = terminal.writes.at(-1) ?? "";
-  assertClearsRows(shrunk, [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  assertClearsRows(shrunk, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   assert.match(shrunk, /TUI\(rows=4\):/);
   assertSafeWrites(terminal.writes);
 
@@ -522,20 +1003,20 @@ test("widget and footer height changes clear both prior and replacement cluster 
   compositor.dispose();
 });
 
-test("overlay handoff clears old and projected coordinates across an unrendered resize", () => {
+test("overlay handoff clears every physical row across an unrendered resize", () => {
   const { terminal, tui, compositor } = installFixture();
   terminal.setSize(40, 14);
 
   tui.overlayVisible = true;
   tui.doRender();
   const opened = terminal.writes.at(-1) ?? "";
-  assertClearsRows(opened, [7, 8, 9, 10, 11, 12, 13, 14]);
+  assertClearsRows(opened, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
   assert.match(opened, /TUI\(rows=14\):/);
 
   tui.overlayVisible = false;
   tui.doRender();
   const closed = terminal.writes.at(-1) ?? "";
-  assertClearsRows(closed, [9, 10, 11, 12, 13, 14]);
+  assertClearsRows(closed, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
   assert.match(closed, /TUI\(rows=8\):/);
   assertSafeWrites(terminal.writes);
 
@@ -653,6 +1134,31 @@ test("disposal write failure restores the pre-disposal render state and removes 
   assert.equal(occurrences(output, "\x1b[?1000l"), 1);
   assert.equal(occurrences(output, "\x1b[?1049l"), 1);
   assertSafeWrites(terminal.writes);
+});
+
+test("quit quiescence survives disposal write failure and fail-closed cleanup", () => {
+  const { terminal, tui, processTarget, compositor } = installFixture();
+  terminal.failOnWriteAttempt = 2;
+  terminal.recordFailedWrite = true;
+
+  assert.doesNotThrow(() => compositor.dispose({ quiesceHost: true }));
+
+  assert.equal(compositor.disposed, true);
+  assert.equal(tui.stopped, true);
+  assert.deepEqual(tui.previousLines, []);
+  assert.deepEqual([...tui.previousKittyImageIds], []);
+  assert.equal(tui.previousWidth, -1);
+  assert.equal(tui.previousHeight, -1);
+  assert.equal(tui.cursorRow, 0);
+  assert.equal(tui.hardwareCursorRow, 0);
+  assert.equal(tui.maxLinesRendered, 0);
+  assert.equal(tui.previousViewportTop, 0);
+  assert.equal(tui.doRender, FakeTui.prototype.doRender);
+  assert.equal(tui.inputListeners.size, 0);
+  assert.equal(processTarget.exitListenerCount(), 0);
+  assert.equal(Object.hasOwn(terminal, "rows"), false);
+  assert.equal(Object.hasOwn(terminal, "write"), false);
+  assert.equal(occurrences(terminal.writes.join(""), "\x1b[?1049l"), 1);
 });
 
 test("all compositor writes avoid unpaired raw full-screen clear/home sequences", () => {

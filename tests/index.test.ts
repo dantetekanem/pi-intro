@@ -45,8 +45,8 @@ test("registered handlers delegate to one session runtime without transforming i
     async start(event: unknown, context: unknown) {
       calls.push(["start", event, context]);
     },
-    shutdown() {
-      calls.push(["shutdown"]);
+    shutdown(event: unknown) {
+      calls.push(["shutdown", event]);
     },
     input() {
       calls.push(["input"]);
@@ -61,18 +61,19 @@ test("registered handlers delegate to one session runtime without transforming i
   const startEvent = { reason: "startup" };
   const startContext = { mode: "tui" };
   const commandContext = { mode: "tui" };
+  const shutdownEvent = { reason: "quit" };
 
   await registered.events.get("session_start")!(startEvent, startContext);
   const inputResult = await registered.events.get("input")!({ text: "hello" }, startContext);
   await registered.command!.handler("", commandContext);
-  await registered.events.get("session_shutdown")!({ reason: "quit" }, startContext);
+  await registered.events.get("session_shutdown")!(shutdownEvent, startContext);
 
   assert.equal(inputResult, undefined);
   assert.deepEqual(calls, [
     ["start", startEvent, startContext],
     ["input"],
     ["replay", commandContext],
-    ["shutdown"],
+    ["shutdown", shutdownEvent],
   ]);
 });
 

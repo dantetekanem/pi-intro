@@ -52,6 +52,9 @@ function collectFakeKittyImageIds(lines: readonly string[]): Set<number> {
 
 export class FakeTerminal implements FixedBottomTerminal {
   readonly writes: string[] = [];
+  readonly directWrites: string[] = [];
+  startCallCount = 0;
+  stopCallCount = 0;
   throwOnWrite = false;
   failOnWriteAttempt: number | null = null;
   recordFailedWrite = false;
@@ -85,6 +88,23 @@ export class FakeTerminal implements FixedBottomTerminal {
     }
     this.writes.push(data);
   }
+
+  start(): void {
+    this.startCallCount += 1;
+  }
+
+  hideCursor(): void {
+    this.directWrites.push("\x1b[?25l");
+  }
+
+  showCursor(): void {
+    this.directWrites.push("\x1b[?25h");
+  }
+
+  stop(): void {
+    this.stopCallCount += 1;
+    this.directWrites.push("\x1b[?2004l");
+  }
 }
 
 export class FakeTui extends FakeContainer implements FixedBottomTui {
@@ -99,13 +119,18 @@ export class FakeTui extends FakeContainer implements FixedBottomTui {
   maxLinesRendered = 0;
   previousViewportTop = 0;
   fullRedrawCount = 0;
+  startCallCount = 0;
   requestRenderCount = 0;
   addInputListenerCount = 0;
   removeInputListenerCount = 0;
   overlayVisible = false;
+  overlayLines = ["fake-overlay"];
+  compositeOverlaysCallCount = 0;
+  throwOnCompositeOverlays = false;
   throwOnDoRender = false;
   forceFullRedraw = false;
   showHardwareCursor = true;
+  stopped = false;
 
   readonly terminal: FakeTerminal;
 
@@ -118,7 +143,10 @@ export class FakeTui extends FakeContainer implements FixedBottomTui {
     if (this.throwOnDoRender) throw new Error("fake render failed");
     const width = this.terminal.columns;
     const height = this.terminal.rows;
-    const lines = this.render(width);
+    let lines = this.render(width);
+    if (this.overlayVisible) {
+      lines = this.compositeOverlays(lines, width, height);
+    }
     const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
     const heightChanged = this.previousHeight !== 0 && this.previousHeight !== height;
     const clear = this.forceFullRedraw || widthChanged || heightChanged;
@@ -126,6 +154,8 @@ export class FakeTui extends FakeContainer implements FixedBottomTui {
     this.terminal.write(
       `\x1b[?2026h${clear ? "\x1b[2J\x1b[H\x1b[3J" : ""}TUI(rows=${height}):${lines.join("|")}\x1b[?2026l`,
     );
+    if (this.showHardwareCursor) this.terminal.showCursor();
+    else this.terminal.hideCursor();
 
     if (this.previousLines.length === 0 || clear) this.fullRedrawCount += 1;
     this.previousLines = [...lines];
@@ -151,8 +181,30 @@ export class FakeTui extends FakeContainer implements FixedBottomTui {
     this.previousViewportTop = Math.max(0, lines.length - this.terminal.rows);
   }
 
-  requestRender(_force = false): void {
+  start(): void {
+    this.startCallCount += 1;
+    this.stopped = false;
+    this.terminal.start();
+    this.terminal.hideCursor();
+    this.requestRender();
+  }
+
+  stop(): void {
+    this.stopped = true;
+    this.terminal.showCursor();
+    this.terminal.stop();
+  }
+
+  requestRender(force = false): void {
     this.requestRenderCount += 1;
+    if (!force) return;
+    this.previousLines = [];
+    this.previousWidth = -1;
+    this.previousHeight = -1;
+    this.cursorRow = 0;
+    this.hardwareCursorRow = 0;
+    this.maxLinesRendered = 0;
+    this.previousViewportTop = 0;
   }
 
   addInputListener(listener: FixedBottomInputListener): () => void {
@@ -169,6 +221,28 @@ export class FakeTui extends FakeContainer implements FixedBottomTui {
 
   hasOverlay(): boolean {
     return this.overlayVisible;
+  }
+
+  compositeOverlays(lines: string[], width: number, height: number): string[] {
+    this.compositeOverlaysCallCount += 1;
+    if (this.throwOnCompositeOverlays) throw new Error("fake overlay composition failed");
+
+    const result = [...lines];
+    const workingHeight = Math.max(result.length, height, this.overlayLines.length);
+    while (result.length < workingHeight) result.push("");
+    const viewportStart = Math.max(0, workingHeight - height);
+    for (let index = 0; index < this.overlayLines.length; index += 1) {
+      const target = viewportStart + index;
+      if (target >= result.length) break;
+      result[target] = this.compositeLineAt(
+        result[target],
+        this.overlayLines[index],
+        0,
+        width,
+        width,
+      );
+    }
+    return result;
   }
 
   compositeLineAt(

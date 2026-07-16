@@ -59,6 +59,8 @@ export interface FixedBottomTerminal {
   readonly columns: number;
   readonly rows: number;
   write(data: string): void;
+  hideCursor(): void;
+  showCursor(): void;
 }
 
 export type FixedBottomInputResult = {
@@ -71,6 +73,7 @@ export type FixedBottomInputListener = (data: string) => FixedBottomInputResult;
 export interface FixedBottomTui extends FixedBottomRenderable {
   readonly terminal: FixedBottomTerminal;
   readonly children: readonly FixedBottomRenderable[];
+  stopped: boolean;
   previousLines: string[];
   previousKittyImageIds: Set<number>;
   previousWidth: number;
@@ -81,9 +84,12 @@ export interface FixedBottomTui extends FixedBottomRenderable {
   previousViewportTop: number;
   fullRedrawCount: number;
   doRender(): void;
+  start(): void;
+  stop(): void;
   requestRender(force?: boolean): void;
   addInputListener(listener: FixedBottomInputListener): () => void;
   hasOverlay(): boolean;
+  compositeOverlays(lines: string[], width: number, height: number): string[];
   compositeLineAt(
     baseLine: string,
     overlayLine: string,

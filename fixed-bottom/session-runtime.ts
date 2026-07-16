@@ -37,6 +37,10 @@ export interface SessionStartEvent {
   readonly reason: string;
 }
 
+export interface SessionShutdownEvent {
+  readonly reason: string;
+}
+
 export type FixedBottomPlatformLoader = () => Promise<FixedBottomPlatform>;
 export type FixedBottomInstaller = (
   options: InstallFixedBottomCompositorOptions,
@@ -149,7 +153,7 @@ export class FixedBottomSessionRuntime {
     return played;
   }
 
-  shutdown(): void {
+  shutdown(event: SessionShutdownEvent): void {
     ++this.generation;
 
     const compositor = this.compositor;
@@ -157,7 +161,8 @@ export class FixedBottomSessionRuntime {
     const bootstrapWidgetKey = this.bootstrapWidgetKey;
 
     try {
-      compositor?.dispose();
+      if (event.reason === "quit") compositor?.dispose({ quiesceHost: true });
+      else compositor?.dispose();
     } finally {
       try {
         if (context && bootstrapWidgetKey) {
