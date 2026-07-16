@@ -1,0 +1,45 @@
+{
+  "name": "pi-intro",
+  "version": "0.1.0",
+  "description": "A cinematic startup overlay and fixed-bottom editor cluster for Pi 0.80.7.",
+  "type": "module",
+  "homepage": "https://github.com/dantetekanem/pi-intro#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dantetekanem/pi-intro.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dantetekanem/pi-intro/issues"
+  },
+  "keywords": [
+    "pi-package"
+  ],
+  "files": [
+    "README.md",
+    "THIRD_PARTY_NOTICES.md",
+    "index.ts",
+    "intro-component.ts",
+    "intro-controller.ts",
+    "fixed-bottom/**/*.ts"
+  ],
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    }
+  }
+}
