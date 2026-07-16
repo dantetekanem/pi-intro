@@ -8,8 +8,8 @@ export default function piIntroExtension(
   pi: ExtensionAPI,
   runtime = new FixedBottomSessionRuntime(),
 ): void {
-  pi.on("session_start", async (event, context) => {
-    await runtime.start(event, context as FixedBottomSessionContext);
+  pi.on("session_start", (event, context) => {
+    void runtime.start(event, context as FixedBottomSessionContext);
   });
 
   pi.on("session_shutdown", () => {

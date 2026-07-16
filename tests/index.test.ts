@@ -76,6 +76,33 @@ test("registered handlers delegate to one session runtime without transforming i
   ]);
 });
 
+test("session_start returns synchronously while startup intro work continues", async () => {
+  let resolveStart!: () => void;
+  const started = new Promise<void>((resolve) => {
+    resolveStart = resolve;
+  });
+  let startCalls = 0;
+  const registered = register({
+    start() {
+      startCalls += 1;
+      return started;
+    },
+    shutdown() {},
+    input() {},
+    async replayIntro() {},
+  });
+
+  const result = registered.events.get("session_start")!(
+    { reason: "startup" },
+    { mode: "tui" },
+  );
+
+  assert.equal(result, undefined);
+  assert.equal(startCalls, 1);
+  resolveStart();
+  await started;
+});
+
 test("default registration does not load Pi/TUI runtime modules", () => {
   const registered = register();
 
