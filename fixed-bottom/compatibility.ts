@@ -5,12 +5,10 @@ import {
   type FixedBottomTui,
 } from "./contracts.ts";
 
-export const SUPPORTED_PI_VERSION = "0.80.7";
 export const EXPECTED_ROOT_CHILDREN = 9;
 
 export interface FixedBottomPreflightInput {
   readonly tui: FixedBottomTui;
-  readonly runtimeVersion: string;
   readonly semantics: CursorWidthSemantics;
 }
 
@@ -64,13 +62,6 @@ function renderable(value: unknown): value is FixedBottomRenderable {
 export function preflightFixedBottomCompositor(
   input: FixedBottomPreflightInput,
 ): FixedBottomPreflightResult {
-  if (input.runtimeVersion !== SUPPORTED_PI_VERSION) {
-    return {
-      ok: false,
-      reason: `unsupported Pi version: expected ${SUPPORTED_PI_VERSION}, received ${input.runtimeVersion}`,
-    };
-  }
-
   const { tui, semantics } = input;
   if (!tui || typeof tui !== "object") {
     return { ok: false, reason: "TUI instance is missing" };
@@ -171,7 +162,7 @@ export function preflightFixedBottomCompositor(
     semantics.cursorMarker !== CURSOR_MARKER
     || typeof semantics.visibleWidth !== "function"
   ) {
-    return { ok: false, reason: "public cursor/width semantics do not match Pi 0.80.7" };
+    return { ok: false, reason: "public cursor/width semantics do not match the required Pi TUI contract" };
   }
   try {
     if (semantics.visibleWidth(semantics.cursorMarker) !== 0) {

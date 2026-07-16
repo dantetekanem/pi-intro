@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { installFixedBottomCompositor } from "../fixed-bottom/compositor.ts";
-import {
-  preflightFixedBottomCompositor,
-  SUPPORTED_PI_VERSION,
-} from "../fixed-bottom/compatibility.ts";
+import { preflightFixedBottomCompositor } from "../fixed-bottom/compatibility.ts";
 import {
   createFakeRoot,
   FakeProcess,
@@ -24,11 +21,10 @@ function fixture(): {
   return { terminal, tui, processTarget: new FakeProcess() };
 }
 
-test("accepts only the exact verified Pi 0.80.7 private shape", () => {
+test("accepts a structurally compatible Pi TUI shape", () => {
   const { tui } = fixture();
   const result = preflightFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
   });
 
@@ -52,7 +48,6 @@ test("rejects a missing or nonwritable stopped field before installation writes"
 
     const result = installFixedBottomCompositor({
       tui,
-      runtimeVersion: SUPPORTED_PI_VERSION,
       semantics: publicSemantics(),
       processTarget,
     });
@@ -68,10 +63,8 @@ test("rejects a missing or nonwritable stopped field before installation writes"
 
 test("every preflight mismatch fails with zero writes, listeners, or runtime patches", () => {
   const cases: Array<(terminal: FakeTerminal, tui: FakeTui) => {
-    runtimeVersion?: string;
     semantics?: ReturnType<typeof publicSemantics>;
   }> = [
-    () => ({ runtimeVersion: "0.80.6" }),
     (terminal) => {
       terminal.setSize(40, Number.NaN);
       return {};
@@ -169,7 +162,6 @@ test("every preflight mismatch fails with zero writes, listeners, or runtime pat
 
     const result = installFixedBottomCompositor({
       tui,
-      runtimeVersion: overrides.runtimeVersion ?? SUPPORTED_PI_VERSION,
       semantics: overrides.semantics ?? publicSemantics(),
       processTarget,
     });

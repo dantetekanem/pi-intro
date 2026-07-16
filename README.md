@@ -23,7 +23,7 @@ Restart Pi. Press any key to skip the intro or run `/intro` to replay it.
 
 ## Compatibility
 
-The fixed-bottom compositor targets **Pi/TUI 0.80.7 exactly**. On another version or incompatible private shape, it fails closed and leaves Pi's normal interface untouched.
+The fixed-bottom compositor validates the live Pi/TUI runtime shape before installation. On an incompatible shape, it fails closed and leaves Pi's normal interface untouched.
 
 Transcript keys: `PageUp`/`PageDown`, `Ctrl+Up`/`Ctrl+Down`, and `Ctrl+Home`/`Ctrl+End`.
 

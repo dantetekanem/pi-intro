@@ -5,10 +5,9 @@ import {
   installFixedBottomCompositor,
   type FixedBottomCompositor,
 } from "../fixed-bottom/compositor.ts";
-import { SUPPORTED_PI_VERSION } from "../fixed-bottom/compatibility.ts";
 import { FakeProcess } from "./fixtures/fixed-bottom-fakes.ts";
 
-const INSTALLED_TUI_PATH = "/Users/leonardopereira/Library/pnpm/store/v11/links/@earendil-works/pi-coding-agent/0.80.7/126775c121519a3c3e79695d763647fe6ac8fd88f43a65b24cbf8aefc66bbf00/node_modules/@earendil-works/pi-tui/dist/tui.js";
+const INSTALLED_TUI_PATH = "/Users/leonardopereira/Library/pnpm/store/v11/links/@earendil-works/pi-tui/0.80.9/48cef1bd0863627b9b44b49d583652491968dfec6b67b5a27d9cf07f3a342674/node_modules/@earendil-works/pi-tui/dist/tui.js";
 const installedTui = await import(pathToFileURL(INSTALLED_TUI_PATH).href);
 const PI_SEGMENT_RESET = "\x1b[0m\x1b]8;;\x07";
 
@@ -102,6 +101,15 @@ function assertClearsRows(output: string, rows: readonly number[]): void {
   }
 }
 
+function assertPrimaryClearedBeforeAlternateScreen(output: string, rows: number): void {
+  const alternateScreenOn = output.indexOf("\x1b[?1049h");
+  assert.ok(alternateScreenOn >= 0, "expected real TUI alternate-screen entry");
+  for (let row = 1; row <= rows; row += 1) {
+    const clear = output.indexOf(`\x1b[${row};1H\x1b[2K`);
+    assert.ok(clear >= 0 && clear < alternateScreenOn, `real TUI primary row ${row} was not cleared before entry`);
+  }
+}
+
 function clearHarnessLogs(terminal: HarnessTerminal): void {
   terminal.writes.length = 0;
   terminal.directWrites.length = 0;
@@ -155,7 +163,6 @@ function installRealFixedFixture(): {
   clearHarnessLogs(terminal);
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: {
       cursorMarker: installedTui.CURSOR_MARKER,
       visibleWidth: installedTui.visibleWidth,
@@ -501,6 +508,7 @@ test("installed real TUI stop and start coordinate exact suspended host lifecycl
 
   assert.equal(terminal.startCallCount, 1);
   assert.equal(occurrences(resumedOutput, "\x1b[?1049h"), 1);
+  assertPrimaryClearedBeforeAlternateScreen(resumedOutput, 12);
   assert.ok(modeEntry < alternateScrollOff);
   assert.ok(alternateScrollOff < mouse1002On);
   assert.ok(mouse1002On < mouse1006On);
@@ -530,7 +538,7 @@ test("installed real TUI stop and start coordinate exact suspended host lifecycl
   assert.equal(tui.stop, installedTui.TUI.prototype.stop);
 });
 
-test("installed real TUI 0.80.7 bounds long-history overlays through compositor lifecycle", () => {
+test("installed real TUI bounds long-history overlays through compositor lifecycle", () => {
   assert.equal(typeof installedTui.TUI, "function");
   assert.equal(installedTui.CURSOR_MARKER, "\x1b_pi:c\x07");
 
@@ -578,7 +586,6 @@ test("installed real TUI 0.80.7 bounds long-history overlays through compositor 
   const originalShowCursor = terminal.showCursor;
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: {
       cursorMarker: installedTui.CURSOR_MARKER,
       visibleWidth: installedTui.visibleWidth,

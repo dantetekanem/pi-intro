@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SUPPORTED_PI_VERSION } from "../fixed-bottom/compatibility.ts";
 import type {
   FixedBottomCompositor,
   FixedBottomDisposeOptions,
@@ -8,7 +7,6 @@ import type {
 import { CURSOR_MARKER } from "../fixed-bottom/contracts.ts";
 import {
   loadFixedBottomPlatform,
-  PI_CODING_AGENT_MODULE,
   PI_TUI_MODULE,
   type FixedBottomPlatform,
 } from "../fixed-bottom/platform.ts";
@@ -17,9 +15,8 @@ import {
   type FixedBottomSessionContext,
 } from "../fixed-bottom/session-runtime.ts";
 
-function platform(runtimeVersion = SUPPORTED_PI_VERSION): FixedBottomPlatform {
+function platform(): FixedBottomPlatform {
   return {
-    runtimeVersion,
     semantics: {
       cursorMarker: CURSOR_MARKER,
       visibleWidth: (text) => text.replaceAll(CURSOR_MARKER, "").length,
@@ -129,9 +126,6 @@ test("loads exact public Pi/TUI platform values without static runtime imports",
 
   const result = await loadFixedBottomPlatform(async (specifier) => {
     imports.push(specifier);
-    if (specifier === PI_CODING_AGENT_MODULE) {
-      return { VERSION: "0.80.7-exact" };
-    }
     return {
       CURSOR_MARKER: "official-marker",
       visibleWidth: publicWidth,
@@ -139,21 +133,16 @@ test("loads exact public Pi/TUI platform values without static runtime imports",
     };
   });
 
-  assert.deepEqual(imports, [PI_CODING_AGENT_MODULE, PI_TUI_MODULE]);
-  assert.equal(result.runtimeVersion, "0.80.7-exact");
+  assert.deepEqual(imports, [PI_TUI_MODULE]);
   assert.equal(result.semantics.cursorMarker, "official-marker");
   assert.equal(result.semantics.visibleWidth, publicWidth);
   assert.equal(result.deleteKittyImage?.(42), "kitty:42");
 
-  const incompatibleDelete = await loadFixedBottomPlatform(async (specifier) => (
-    specifier === PI_CODING_AGENT_MODULE
-      ? { VERSION: SUPPORTED_PI_VERSION }
-      : {
-          CURSOR_MARKER,
-          visibleWidth: publicWidth,
-          deleteKittyImage: (_imageId: number, _extra: unknown) => "wrong signature",
-        }
-  ));
+  const incompatibleDelete = await loadFixedBottomPlatform(async () => ({
+    CURSOR_MARKER,
+    visibleWidth: publicWidth,
+    deleteKittyImage: (_imageId: number, _extra: unknown) => "wrong signature",
+  }));
   assert.equal(incompatibleDelete.deleteKittyImage, undefined);
 });
 
@@ -281,28 +270,6 @@ test("is a dependency-free no-op outside TUI mode", async () => {
   assert.equal(installCalls, 0);
   assert.equal(state.widgetCalls.length, 0);
   assert.equal(state.notifications.length, 0);
-});
-
-test("rejects unsupported Pi exactly, warns once, and never calls the installer", async () => {
-  const { context, state } = createContext();
-  let installCalls = 0;
-  const runtime = new FixedBottomSessionRuntime({
-    loadPlatform: async () => platform("0.80.8"),
-    installCompositor: () => {
-      installCalls += 1;
-      return { installed: true, compositor: new FakeCompositor() };
-    },
-  });
-
-  await runtime.start({ reason: "reload" }, context);
-  await runtime.start({ reason: "resume" }, context);
-
-  assert.equal(installCalls, 0);
-  assert.equal(state.widgetCalls.length, 0);
-  assert.equal(state.notifications.length, 1);
-  assert.match(state.notifications[0][0], /expected 0\.80\.7, received 0\.80\.8/);
-  assert.match(state.notifications[0][0], /normal UI remains active/);
-  assert.equal(state.notifications[0][1], "warning");
 });
 
 test("failed installation removes bootstrap state, keeps normal UI ownership, and warns once", async () => {

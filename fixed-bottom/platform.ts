@@ -1,11 +1,9 @@
 import type { CursorWidthSemantics } from "./contracts.ts";
 import type { KittyImageDelete } from "./paint.ts";
 
-export const PI_CODING_AGENT_MODULE = "@earendil-works/pi-coding-agent";
 export const PI_TUI_MODULE = "@earendil-works/pi-tui";
 
 export interface FixedBottomPlatform {
-  readonly runtimeVersion: string;
   readonly semantics: CursorWidthSemantics;
   readonly deleteKittyImage?: KittyImageDelete;
 }
@@ -33,25 +31,16 @@ function publicKittyDeleteAdapter(candidate: unknown): KittyImageDelete | undefi
 export async function loadFixedBottomPlatform(
   importer: RuntimeModuleImporter = defaultImporter,
 ): Promise<FixedBottomPlatform> {
-  const [codingAgent, tui] = await Promise.all([
-    importer(PI_CODING_AGENT_MODULE),
-    importer(PI_TUI_MODULE),
-  ]);
+  const tui = await importer(PI_TUI_MODULE);
 
-  const runtimeVersion = codingAgent.VERSION;
   const cursorMarker = tui.CURSOR_MARKER;
   const visibleWidth = tui.visibleWidth;
-
-  if (typeof runtimeVersion !== "string") {
-    throw new TypeError("Pi runtime did not export VERSION as a string");
-  }
   if (typeof cursorMarker !== "string" || typeof visibleWidth !== "function") {
     throw new TypeError("Pi TUI did not export public cursor/width semantics");
   }
 
   const deleteKittyImage = publicKittyDeleteAdapter(tui.deleteKittyImage);
   return {
-    runtimeVersion,
     semantics: {
       cursorMarker,
       visibleWidth: visibleWidth as CursorWidthSemantics["visibleWidth"],

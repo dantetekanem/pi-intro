@@ -5,7 +5,6 @@ import {
   tailRows,
   type FixedBottomCompositor,
 } from "../fixed-bottom/compositor.ts";
-import { SUPPORTED_PI_VERSION } from "../fixed-bottom/compatibility.ts";
 import {
   createFakeRoot,
   FakeProcess,
@@ -31,7 +30,6 @@ function installFixture(rows = 12): {
   const processTarget = new FakeProcess();
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget,
   });
@@ -85,6 +83,15 @@ function assertClearsRows(output: string, rows: readonly number[]): void {
   }
 }
 
+function assertPrimaryClearedBeforeAlternateScreen(output: string, rows: number): void {
+  const alternateScreenOn = output.indexOf("\x1b[?1049h");
+  assert.ok(alternateScreenOn >= 0, "expected alternate-screen entry");
+  for (let row = 1; row <= rows; row += 1) {
+    const clear = output.indexOf(`\x1b[${row};1H\x1b[2K`);
+    assert.ok(clear >= 0 && clear < alternateScreenOn, `primary row ${row} was not cleared before entry`);
+  }
+}
+
 test("tailRows returns a bounded copy without mutating its input", () => {
   const lines = ["one", "two", "three", "four"];
 
@@ -99,6 +106,7 @@ test("install paints the transcript reservation and canonical cluster at the ter
 
   assert.equal(terminal.writes.length, 1);
   const output = terminal.writes[0];
+  assertPrimaryClearedBeforeAlternateScreen(output, 12);
   assert.match(output, /\x1b\[1;6r/);
   assert.ok(output.includes("\x1b[?1002h\x1b[?1006h"));
   assert.match(output, /TUI\(rows=6\):transcript-7\|transcript-8\|transcript-9\|transcript-10\|transcript-11\|transcript-12/);
@@ -362,8 +370,7 @@ test("preflight failure does not emit an unconditional terminal reset", () => {
 
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: "0.0.0",
-    semantics: publicSemantics(),
+    semantics: { ...publicSemantics(), cursorMarker: "incompatible-marker" },
     processTarget,
   });
 
@@ -399,7 +406,6 @@ test("write failure after mode entry best-effort restores modes and rolls back h
 
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget,
   });
@@ -441,7 +447,6 @@ test("initial render failure rolls back every patch and registered hook without 
 
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget,
   });
@@ -479,7 +484,6 @@ test("overlay composition failure is fail-closed before any body write", () => {
 
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget,
   });
@@ -526,7 +530,6 @@ test("physical row invariant rejects oversized renderer state while output is ca
 
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget,
   });
@@ -571,7 +574,6 @@ test("over-width render suppresses TUI stop side effects before fail-closed rest
   const originalShowCursor = terminal.showCursor;
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget,
   });
@@ -754,7 +756,6 @@ test("quit guard restores exact host descriptors when original stop throws", () 
   tui.seedRenderState();
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget: new FakeProcess(),
   });
@@ -793,7 +794,6 @@ test("stop attempts original terminal shutdown and rethrows the first cleanup fa
   tui.seedRenderState();
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget: new FakeProcess(),
   });
@@ -830,7 +830,6 @@ test("terminal write failure still rolls back patches and hooks when no output i
 
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget,
   });
@@ -862,7 +861,6 @@ test("dispose is idempotent and restores descriptors, methods, listener, exit ho
   };
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget,
   });
@@ -1045,7 +1043,6 @@ test("install rejects captured Pi full clears before any physical write and rest
 
   const result = installFixedBottomCompositor({
     tui,
-    runtimeVersion: SUPPORTED_PI_VERSION,
     semantics: publicSemantics(),
     processTarget,
   });

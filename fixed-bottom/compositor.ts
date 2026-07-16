@@ -37,7 +37,6 @@ import {
 
 export interface InstallFixedBottomCompositorOptions {
   readonly tui: FixedBottomTui;
-  readonly runtimeVersion: string;
   readonly semantics: CursorWidthSemantics;
   readonly processTarget?: ProcessExitTarget;
   readonly deleteKittyImage?: KittyImageDelete;
@@ -640,6 +639,7 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
 
   private renderFixed(pass: FixedRenderPass): void {
     const modePlan = fixedModePlan(this.mode, pass.scrollRows);
+    const enteringAlternateScreen = !this.mode.active && modePlan.next.active;
     const geometry = fixedGeometry(pass.realRows, pass.cluster.lines.length);
     const resetDifferential = this.shouldResetDifferential(pass, geometry);
     const currentClusterImageIds = collectKittyImageIds(pass.cluster.lines);
@@ -672,8 +672,13 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
     );
     this.transactionGeometries = [this.previousGeometry, geometry, fullGeometry];
 
-    const prefix = modePlan.sequence
-      + deleteKittyImages(invalidPriorImageIds, this.deleteImage)
+    const invalidImageDelete = deleteKittyImages(invalidPriorImageIds, this.deleteImage);
+    const primaryScreenCleanup = enteringAlternateScreen
+      ? invalidImageDelete + clearGeometryRows(fixedGeometry(pass.realRows, pass.realRows))
+      : "";
+    const prefix = primaryScreenCleanup
+      + modePlan.sequence
+      + (enteringAlternateScreen ? "" : invalidImageDelete)
       + paintPlan.deleteSequence
       + (fullGeometry ? clearGeometryRows(fullGeometry) + SAFE_SCREEN_ORIGIN : "");
     const flushResult = this.flushRenderTransaction(prefix, () => ({
@@ -710,6 +715,7 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
     const modePlan = restoreModes
       ? restoredModePlan(this.mode)
       : overlayModePlan(this.mode, pass.realRows);
+    const enteringAlternateScreen = !restoreModes && !this.mode.active && modePlan.next.active;
     const projectedGeometry = fixedGeometry(pass.realRows, this.previousClusterLines.length);
     const resetDifferential = this.shouldResetDifferential(pass, null);
     const priorTuiImageIds = resetDifferential
@@ -728,8 +734,13 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
     this.transactionClusterImageIds = invalidPriorImageIds;
     this.transactionGeometries = [this.previousGeometry, projectedGeometry, fullGeometry];
 
-    const prefix = (restoreModes ? "" : modePlan.sequence)
-      + deleteKittyImages(invalidPriorImageIds, this.deleteImage)
+    const invalidImageDelete = deleteKittyImages(invalidPriorImageIds, this.deleteImage);
+    const primaryScreenCleanup = enteringAlternateScreen
+      ? invalidImageDelete + clearGeometryRows(fixedGeometry(pass.realRows, pass.realRows))
+      : "";
+    const prefix = primaryScreenCleanup
+      + (restoreModes ? "" : modePlan.sequence)
+      + (enteringAlternateScreen ? "" : invalidImageDelete)
       + (resetDifferential && fullGeometry
         ? clearGeometryRows(fullGeometry) + SAFE_SCREEN_ORIGIN
         : "");

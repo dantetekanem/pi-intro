@@ -4,7 +4,6 @@ import {
   type InstallFixedBottomCompositorOptions,
   type InstallFixedBottomCompositorResult,
 } from "./compositor.ts";
-import { SUPPORTED_PI_VERSION } from "./compatibility.ts";
 import type { FixedBottomTui } from "./contracts.ts";
 import {
   loadFixedBottomPlatform,
@@ -99,14 +98,6 @@ export class FixedBottomSessionRuntime {
       const platform = await this.loadPlatform();
       if (!this.isCurrent(generation)) return;
 
-      if (platform.runtimeVersion !== SUPPORTED_PI_VERSION) {
-        this.warnOnce(
-          context,
-          `unsupported Pi version: expected ${SUPPORTED_PI_VERSION}, received ${platform.runtimeVersion}`,
-        );
-        return;
-      }
-
       const tui = this.captureTui(context);
       if (!this.isCurrent(generation)) return;
       if (!tui) {
@@ -116,7 +107,6 @@ export class FixedBottomSessionRuntime {
 
       const result = this.installCompositor({
         tui,
-        runtimeVersion: platform.runtimeVersion,
         semantics: platform.semantics,
         deleteKittyImage: platform.deleteKittyImage,
       });
