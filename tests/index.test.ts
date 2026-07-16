@@ -7,7 +7,10 @@ interface RegisteredHandlers {
   command?: { description: string; handler: Function };
 }
 
-function register(runtime?: object): RegisteredHandlers {
+function register(options: {
+  playIntro?: (context: any) => Promise<boolean>;
+  installBottomSpacer?: (ui: any) => (() => void) | undefined;
+} = {}): RegisteredHandlers {
   const registered: RegisteredHandlers = { events: new Map() };
   const pi = {
     on(event: string, handler: Function) {
@@ -19,94 +22,153 @@ function register(runtime?: object): RegisteredHandlers {
     },
   };
 
-  if (runtime) piIntroExtension(pi as any, runtime as any);
-  else piIntroExtension(pi as any);
+  piIntroExtension(
+    pi as any,
+    options.playIntro ?? (async () => true),
+    options.installBottomSpacer ?? (() => undefined),
+  );
   return registered;
 }
 
-test("thin index registers only session lifecycle, input bottom-follow, and /intro", () => {
-  const registered = register({
-    async start() {},
-    shutdown() {},
-    input() {},
-    async replayIntro() {},
-  });
+test("registers only session lifecycle and /intro", () => {
+  const registered = register();
 
-  assert.deepEqual(
-    [...registered.events.keys()],
-    ["session_start", "session_shutdown", "input"],
-  );
+  assert.deepEqual([...registered.events.keys()], ["session_start", "session_shutdown"]);
   assert.equal(registered.command?.description, "Replay the PI startup introduction");
 });
 
-test("registered handlers delegate to one session runtime without transforming input", async () => {
-  const calls: Array<[string, ...unknown[]]> = [];
-  const runtime = {
-    async start(event: unknown, context: unknown) {
-      calls.push(["start", event, context]);
-    },
-    shutdown(event: unknown) {
-      calls.push(["shutdown", event]);
-    },
-    input() {
-      calls.push(["input"]);
-      return undefined;
-    },
-    async replayIntro(context: unknown) {
-      calls.push(["replay", context]);
-      return true;
-    },
-  };
-  const registered = register(runtime);
-  const startEvent = { reason: "startup" };
-  const startContext = { mode: "tui" };
-  const commandContext = { mode: "tui" };
-  const shutdownEvent = { reason: "quit" };
-
-  await registered.events.get("session_start")!(startEvent, startContext);
-  const inputResult = await registered.events.get("input")!({ text: "hello" }, startContext);
-  await registered.command!.handler("", commandContext);
-  await registered.events.get("session_shutdown")!(shutdownEvent, startContext);
-
-  assert.equal(inputResult, undefined);
-  assert.deepEqual(calls, [
-    ["start", startEvent, startContext],
-    ["input"],
-    ["replay", commandContext],
-    ["shutdown", shutdownEvent],
-  ]);
-});
-
-test("session_start returns synchronously while startup intro work continues", async () => {
-  let resolveStart!: () => void;
-  const started = new Promise<void>((resolve) => {
-    resolveStart = resolve;
+test("session_start stays nonblocking and installs after the startup intro", async () => {
+  let finishIntro!: (played: boolean) => void;
+  const intro = new Promise<boolean>((resolve) => {
+    finishIntro = resolve;
   });
-  let startCalls = 0;
+  const calls: string[] = [];
+  let installedUi: unknown;
+  let installationFinished!: () => void;
+  const installed = new Promise<void>((resolve) => {
+    installationFinished = resolve;
+  });
   const registered = register({
-    start() {
-      startCalls += 1;
-      return started;
+    playIntro: async () => {
+      calls.push("intro");
+      return intro;
     },
-    shutdown() {},
-    input() {},
-    async replayIntro() {},
+    installBottomSpacer: (ui) => {
+      calls.push("spacer");
+      installedUi = ui;
+      installationFinished();
+      return () => {};
+    },
   });
+  const ui = {};
 
   const result = registered.events.get("session_start")!(
     { reason: "startup" },
-    { mode: "tui" },
+    { mode: "tui", ui },
   );
 
   assert.equal(result, undefined);
-  assert.equal(startCalls, 1);
-  resolveStart();
-  await started;
+  assert.deepEqual(calls, ["intro"]);
+
+  finishIntro(true);
+  await installed;
+
+  assert.deepEqual(calls, ["intro", "spacer"]);
+  assert.equal(installedUi, ui);
 });
 
-test("default registration does not load Pi/TUI runtime modules", () => {
-  const registered = register();
+test("stale startup intro completion does not install a spacer", async () => {
+  let finishIntro!: (played: boolean) => void;
+  const intro = new Promise<boolean>((resolve) => {
+    finishIntro = resolve;
+  });
+  let installs = 0;
+  const registered = register({
+    playIntro: () => intro,
+    installBottomSpacer: () => {
+      installs += 1;
+      return () => {};
+    },
+  });
 
-  assert.equal(registered.events.size, 3);
-  assert.ok(registered.command);
+  registered.events.get("session_start")!(
+    { reason: "startup" },
+    { mode: "tui", ui: {} },
+  );
+  registered.events.get("session_shutdown")!({ reason: "quit" }, { mode: "tui" });
+
+  finishIntro(true);
+  await intro;
+  await Promise.resolve();
+
+  assert.equal(installs, 0);
+});
+
+test("shutdown removes the installed spacer and clears it", () => {
+  let installs = 0;
+  let cleanups = 0;
+  const registered = register({
+    installBottomSpacer: () => {
+      installs += 1;
+      return () => {
+        cleanups += 1;
+      };
+    },
+  });
+
+  registered.events.get("session_start")!(
+    { reason: "resume" },
+    { mode: "tui", ui: {} },
+  );
+  registered.events.get("session_shutdown")!({ reason: "resume" }, { mode: "tui" });
+  registered.events.get("session_shutdown")!({ reason: "quit" }, { mode: "tui" });
+
+  assert.equal(installs, 1);
+  assert.equal(cleanups, 1);
+});
+
+test("does not install outside TUI mode", async () => {
+  let installs = 0;
+  const registered = register({
+    installBottomSpacer: () => {
+      installs += 1;
+      return () => {};
+    },
+  });
+
+  registered.events.get("session_start")!(
+    { reason: "resume" },
+    { mode: "print", ui: {} },
+  );
+  await Promise.resolve();
+
+  assert.equal(installs, 0);
+});
+
+test("keeps /intro and waits for the replay", async () => {
+  const contexts: unknown[] = [];
+  let finishReplay!: (played: boolean) => void;
+  const replay = new Promise<boolean>((resolve) => {
+    finishReplay = resolve;
+  });
+  const registered = register({
+    playIntro: (context) => {
+      contexts.push(context);
+      return replay;
+    },
+  });
+  const context = { mode: "tui", ui: {} };
+  let finished = false;
+
+  const result = registered.command!.handler("", context).then(() => {
+    finished = true;
+  });
+  await Promise.resolve();
+
+  assert.equal(finished, false);
+  assert.deepEqual(contexts, [context]);
+
+  finishReplay(true);
+  await result;
+  assert.equal(finished, true);
 });

@@ -1,27 +1,38 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-  FixedBottomSessionRuntime,
-  type FixedBottomSessionContext,
-} from "./fixed-bottom/session-runtime.ts";
+import { installBottomSpacer } from "./bottom-spacer.ts";
+import { playIntro, type IntroContext } from "./intro-controller.ts";
 
 export default function piIntroExtension(
   pi: ExtensionAPI,
-  runtime = new FixedBottomSessionRuntime(),
+  introPlayer = playIntro,
+  spacerInstaller = installBottomSpacer,
 ): void {
+  let generation = 0;
+  let removeSpacer: (() => void) | undefined;
+
   pi.on("session_start", (event, context) => {
-    void runtime.start(event, context as FixedBottomSessionContext);
+    const sessionGeneration = ++generation;
+
+    void (async () => {
+      if (event.reason === "startup") {
+        await introPlayer(context as IntroContext);
+      }
+
+      if (sessionGeneration !== generation || context.mode !== "tui") return;
+      removeSpacer = spacerInstaller(context.ui);
+    })().catch(() => {});
   });
 
-  pi.on("session_shutdown", (event) => {
-    runtime.shutdown(event);
+  pi.on("session_shutdown", () => {
+    ++generation;
+    removeSpacer?.();
+    removeSpacer = undefined;
   });
-
-  pi.on("input", () => runtime.input());
 
   pi.registerCommand("intro", {
     description: "Replay the PI startup introduction",
     handler: async (_args, context) => {
-      await runtime.replayIntro(context as FixedBottomSessionContext);
+      await introPlayer(context as IntroContext);
     },
   });
 }

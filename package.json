@@ -1,7 +1,7 @@
 {
   "name": "pi-intro",
   "version": "0.1.0",
-  "description": "A cinematic startup overlay and fixed-bottom editor cluster for Pi.",
+  "description": "A cinematic startup overlay and bottom spacer for Pi.",
   "type": "module",
   "homepage": "https://github.com/dantetekanem/pi-intro#readme",
   "repository": {
@@ -16,11 +16,11 @@
   ],
   "files": [
     "README.md",
-    "THIRD_PARTY_NOTICES.md",
+    "demo.gif",
     "index.ts",
     "intro-component.ts",
     "intro-controller.ts",
-    "fixed-bottom/**/*.ts"
+    "bottom-spacer.ts"
   ],
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.ts"
