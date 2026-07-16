@@ -4,7 +4,6 @@ import piIntroExtension from "../index.ts";
 
 interface RegisteredHandlers {
   readonly events: Map<string, Function>;
-  command?: { description: string; handler: Function };
 }
 
 function register(options: {
@@ -16,10 +15,6 @@ function register(options: {
     on(event: string, handler: Function) {
       registered.events.set(event, handler);
     },
-    registerCommand(name: string, command: { description: string; handler: Function }) {
-      assert.equal(name, "intro");
-      registered.command = command;
-    },
   };
 
   piIntroExtension(
@@ -30,11 +25,10 @@ function register(options: {
   return registered;
 }
 
-test("registers only session lifecycle and /intro", () => {
+test("registers only session lifecycle", () => {
   const registered = register();
 
   assert.deepEqual([...registered.events.keys()], ["session_start", "session_shutdown"]);
-  assert.equal(registered.command?.description, "Replay the PI startup introduction");
 });
 
 test("session_start stays nonblocking and installs after the startup intro", async () => {
@@ -143,32 +137,4 @@ test("does not install outside TUI mode", async () => {
   await Promise.resolve();
 
   assert.equal(installs, 0);
-});
-
-test("keeps /intro and waits for the replay", async () => {
-  const contexts: unknown[] = [];
-  let finishReplay!: (played: boolean) => void;
-  const replay = new Promise<boolean>((resolve) => {
-    finishReplay = resolve;
-  });
-  const registered = register({
-    playIntro: (context) => {
-      contexts.push(context);
-      return replay;
-    },
-  });
-  const context = { mode: "tui", ui: {} };
-  let finished = false;
-
-  const result = registered.command!.handler("", context).then(() => {
-    finished = true;
-  });
-  await Promise.resolve();
-
-  assert.equal(finished, false);
-  assert.deepEqual(contexts, [context]);
-
-  finishReplay(true);
-  await result;
-  assert.equal(finished, true);
 });

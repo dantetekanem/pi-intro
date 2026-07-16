@@ -28,11 +28,4 @@ export default function piIntroExtension(
     removeSpacer?.();
     removeSpacer = undefined;
   });
-
-  pi.registerCommand("intro", {
-    description: "Replay the PI startup introduction",
-    handler: async (_args, context) => {
-      await introPlayer(context as IntroContext);
-    },
-  });
 }
