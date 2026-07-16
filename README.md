@@ -34,5 +34,3 @@ Transcript keys: `PageUp`/`PageDown`, `Ctrl+Up`/`Ctrl+Down`, and `Ctrl+Home`/`Ct
 ```bash
 node --experimental-strip-types --test tests/*.test.ts
 ```
-
-See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for attribution.
