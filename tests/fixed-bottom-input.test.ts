@@ -3,6 +3,7 @@ import test from "node:test";
 import type { ViewportState } from "../fixed-bottom/contracts.ts";
 import {
   createFixedBottomInputListener,
+  fixedBottomMouseScrollDelta,
   fixedBottomScrollAction,
 } from "../fixed-bottom/input.ts";
 import {
@@ -21,6 +22,19 @@ test("maps PageUp/PageDown and common modified scroll keys only", () => {
   assert.equal(fixedBottomScrollAction("\x1b[A"), undefined);
   assert.equal(fixedBottomScrollAction("\x1b[1;2A"), undefined);
   assert.equal(fixedBottomScrollAction("\x1b[<64;20;10M"), undefined);
+});
+
+test("maps tmux-compatible SGR wheel packets to transcript deltas", () => {
+  assert.equal(fixedBottomMouseScrollDelta("\x1b[<64;20;10M"), 3);
+  assert.equal(fixedBottomMouseScrollDelta("\x1b[<65;20;10M"), -3);
+  assert.equal(fixedBottomMouseScrollDelta("\x1b[<68;20;10M"), 3);
+  assert.equal(
+    fixedBottomMouseScrollDelta("\x1b[<64;20;10M\x1b[<64;20;10M"),
+    6,
+  );
+  assert.equal(fixedBottomMouseScrollDelta("\x1b[<64;20;10m"), undefined);
+  assert.equal(fixedBottomMouseScrollDelta("\x1b[<0;20;10M"), undefined);
+  assert.equal(fixedBottomMouseScrollDelta("prefix\x1b[<64;20;10M"), undefined);
 });
 
 test("scroll listener updates the pure viewport and consumes recognized keys", () => {
@@ -52,8 +66,15 @@ test("scroll listener updates the pure viewport and consumes recognized keys", (
   assert.equal(renders, 5);
 
   assert.equal(listener("\x1b[A"), undefined);
-  assert.equal(listener("\x1b[<64;20;10M"), undefined);
+  assert.deepEqual(listener("\x1b[<64;20;10M"), { consume: true });
+  assert.equal(state.offset, 3);
+  assert.deepEqual(listener("\x1b[<65;20;10M"), { consume: true });
+  assert.equal(state.offset, 0);
+  assert.equal(renders, 7);
+
   suspended = true;
   assert.equal(listener("\x1b[5~"), undefined);
-  assert.equal(renders, 5);
+  assert.deepEqual(listener("\x1b[<64;20;10M"), { consume: true });
+  assert.equal(state.offset, 0);
+  assert.equal(renders, 7);
 });

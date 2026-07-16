@@ -8,6 +8,8 @@ const ALTERNATE_SCREEN_ON = "\x1b[?1049h";
 const ALTERNATE_SCREEN_OFF = "\x1b[?1049l";
 const ALTERNATE_SCROLL_ON = "\x1b[?1007h";
 const ALTERNATE_SCROLL_OFF = "\x1b[?1007l";
+const MOUSE_REPORTING_ON = "\x1b[?1002h\x1b[?1006h";
+const MOUSE_REPORTING_OFF = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 const RESET_SCROLL_REGION = "\x1b[r";
 
 function terminalRow(value: number): number {
@@ -32,6 +34,7 @@ export function enterFixedBottomMode(scrollBottom: number): string {
   return synchronized(
     ALTERNATE_SCREEN_ON
     + ALTERNATE_SCROLL_OFF
+    + MOUSE_REPORTING_ON
     + setScrollRegion(1, scrollBottom),
   );
 }
@@ -40,9 +43,14 @@ export function updateFixedBottomScrollRegion(scrollBottom: number): string {
   return synchronized(RESET_SCROLL_REGION + setScrollRegion(1, scrollBottom));
 }
 
+export function suspendFixedBottomScrollRegion(): string {
+  return synchronized(RESET_SCROLL_REGION);
+}
+
 export function restoreTerminalModes(): string {
   return synchronized(
     RESET_SCROLL_REGION
+    + MOUSE_REPORTING_OFF
     + ALTERNATE_SCROLL_ON
     + ALTERNATE_SCREEN_OFF,
   );

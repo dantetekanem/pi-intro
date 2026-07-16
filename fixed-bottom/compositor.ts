@@ -23,6 +23,7 @@ import {
 import {
   enterFixedBottomMode,
   restoreTerminalModes,
+  suspendFixedBottomScrollRegion,
   updateFixedBottomScrollRegion,
 } from "./terminal-modes.ts";
 import { renderFixedBottomTopology } from "./topology.ts";
@@ -155,7 +156,21 @@ function fixedModePlan(state: ModeState, scrollBottom: number): ModePlan {
   };
 }
 
-function suspendedModePlan(state: ModeState): ModePlan {
+function overlayModePlan(state: ModeState, realRows: number): ModePlan {
+  if (!state.active) {
+    return {
+      sequence: enterFixedBottomMode(realRows),
+      next: { active: true, scrollBottom: null },
+    };
+  }
+  if (state.scrollBottom === null) return { sequence: "", next: state };
+  return {
+    sequence: suspendFixedBottomScrollRegion(),
+    next: { active: true, scrollBottom: null },
+  };
+}
+
+function restoredModePlan(state: ModeState): ModePlan {
   if (!state.active) return { sequence: "", next: state };
   return {
     sequence: restoreTerminalModes(),
@@ -273,6 +288,7 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
   private previousClusterImageIds: ReadonlySet<number> = new Set();
   private transactionOutputMayHaveApplied = false;
   private transactionModeMayBeActive = false;
+  private transactionModeRestoreAttempted = false;
   private transactionClusterImageIds: ReadonlySet<number> = new Set();
   private transactionGeometries: readonly (FixedGeometry | null)[] = [];
   private removeInputListener: (() => void) | null = null;
@@ -504,12 +520,16 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
 
     this.stageTuiRenderState(pass, resetDifferential);
     this.transactionModeMayBeActive = modePlan.next.active;
+    this.transactionModeRestoreAttempted = this.mode.active && !modePlan.next.active;
     this.transactionClusterImageIds = currentClusterImageIds;
     this.transactionGeometries = [this.previousGeometry, geometry];
 
+    const geometryClear = this.surface === "fixed" && sameGeometry(this.previousGeometry, geometry)
+      ? ""
+      : clearGeometryRows(this.previousGeometry, geometry);
     const prefix = modePlan.sequence
       + deleteKittyImages(removedImageIds, this.deleteImage)
-      + clearGeometryRows(this.previousGeometry, geometry)
+      + geometryClear
       + SAFE_SCREEN_ORIGIN;
     const suffix = paintFixedBottomCluster({
       cluster: pass.cluster,
@@ -540,13 +560,16 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
       : pass.realRows - 1;
   }
 
-  private renderOverlay(pass: OverlayRenderPass): void {
-    const modePlan = suspendedModePlan(this.mode);
+  private renderOverlay(pass: OverlayRenderPass, restoreModes = false): void {
+    const modePlan = restoreModes
+      ? restoredModePlan(this.mode)
+      : overlayModePlan(this.mode, pass.realRows);
     const projectedGeometry = fixedGeometry(pass.realRows, this.previousClusterLines.length);
     const resetDifferential = this.shouldResetDifferential(pass, null);
 
     this.stageTuiRenderState(pass, resetDifferential);
     this.transactionModeMayBeActive = modePlan.next.active;
+    this.transactionModeRestoreAttempted = this.mode.active && !modePlan.next.active;
     this.transactionClusterImageIds = new Set();
     this.transactionGeometries = [this.previousGeometry, projectedGeometry];
 
@@ -594,6 +617,7 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
   private completeRenderTransaction(): void {
     this.transactionOutputMayHaveApplied = false;
     this.transactionModeMayBeActive = false;
+    this.transactionModeRestoreAttempted = false;
     this.transactionClusterImageIds = new Set();
     this.transactionGeometries = [];
   }
@@ -617,8 +641,13 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
     const imageIds = this.transactionOutputMayHaveApplied
       ? unionImageIds(this.previousClusterImageIds, this.transactionClusterImageIds)
       : this.previousClusterImageIds;
-    const restore = this.mode.active
-      || (this.transactionOutputMayHaveApplied && this.transactionModeMayBeActive)
+    const restoreAlreadyAttempted = this.transactionOutputMayHaveApplied
+      && this.transactionModeRestoreAttempted;
+    const restore = !restoreAlreadyAttempted
+      && (
+        this.mode.active
+        || (this.transactionOutputMayHaveApplied && this.transactionModeMayBeActive)
+      )
       ? restoreTerminalModes()
       : "";
 
@@ -705,6 +734,7 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
     this.previousClusterImageIds = new Set();
     this.transactionOutputMayHaveApplied = false;
     this.transactionModeMayBeActive = false;
+    this.transactionModeRestoreAttempted = false;
     this.transactionClusterImageIds = new Set();
     this.transactionGeometries = [];
     this.resetTransientRenderState();
@@ -722,7 +752,7 @@ class InstalledFixedBottomCompositor implements FixedBottomCompositor {
           kind: "overlay",
           realRows: this.readRealRows(),
         };
-        this.renderOverlay(pass);
+        this.renderOverlay(pass, true);
       } else {
         this.writePhysical(this.cleanupOutput(null));
         this.mode = { active: false, scrollBottom: null };

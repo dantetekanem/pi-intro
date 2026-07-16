@@ -38,19 +38,49 @@ export function fixedBottomScrollAction(data: string): FixedBottomScrollAction |
   return SCROLL_KEYS.get(data);
 }
 
+function mouseBaseButton(code: number): number {
+  return code & ~(4 | 8 | 16 | 32);
+}
+
+export function fixedBottomMouseScrollDelta(data: string): number | undefined {
+  const pattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
+  let offset = 0;
+  let delta = 0;
+  let found = false;
+
+  for (const match of data.matchAll(pattern)) {
+    if (match.index !== offset || match[4] !== "M") return undefined;
+    offset = match.index + match[0].length;
+
+    const button = mouseBaseButton(Number(match[1]));
+    if (button === 64) delta += 3;
+    else if (button === 65) delta -= 3;
+    else return undefined;
+    found = true;
+  }
+
+  return found && offset === data.length ? delta : undefined;
+}
+
 export function createFixedBottomInputListener(
   options: FixedBottomInputOptions,
 ): FixedBottomInputListener {
   return (data) => {
-    const action = fixedBottomScrollAction(data);
-    if (!action || options.isSuspended?.()) return undefined;
+    const mouseDelta = fixedBottomMouseScrollDelta(data);
+    const action = mouseDelta === undefined ? fixedBottomScrollAction(data) : undefined;
+    if (mouseDelta === undefined && !action) return undefined;
+    if (options.isSuspended?.()) {
+      return mouseDelta === undefined ? undefined : { consume: true };
+    }
 
     const visibleRows = Math.max(1, Math.floor(options.getVisibleRows()));
     const pageRows = Math.max(1, visibleRows - 1);
     const state = options.getState();
     let next: ViewportState;
 
-    switch (action) {
+    if (mouseDelta !== undefined) {
+      next = scrollViewport(state, mouseDelta, visibleRows).state;
+    } else switch (action) {
       case "page-up":
         next = scrollViewport(state, pageRows, visibleRows).state;
         break;

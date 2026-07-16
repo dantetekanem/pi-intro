@@ -5,6 +5,7 @@ import {
   FixedBottomTerminalModes,
   restoreTerminalModes,
   setScrollRegion,
+  suspendFixedBottomScrollRegion,
   updateFixedBottomScrollRegion,
 } from "../fixed-bottom/terminal-modes.ts";
 
@@ -12,15 +13,19 @@ test("builds deterministic terminal mode sequences", () => {
   assert.equal(setScrollRegion(1, 18), "\x1b[1;18r");
   assert.equal(
     enterFixedBottomMode(18),
-    "\x1b[?2026h\x1b[?1049h\x1b[?1007l\x1b[1;18r\x1b[?2026l",
+    "\x1b[?2026h\x1b[?1049h\x1b[?1007l\x1b[?1002h\x1b[?1006h\x1b[1;18r\x1b[?2026l",
   );
   assert.equal(
     updateFixedBottomScrollRegion(16),
     "\x1b[?2026h\x1b[r\x1b[1;16r\x1b[?2026l",
   );
   assert.equal(
+    suspendFixedBottomScrollRegion(),
+    "\x1b[?2026h\x1b[r\x1b[?2026l",
+  );
+  assert.equal(
     restoreTerminalModes(),
-    "\x1b[?2026h\x1b[r\x1b[?1007h\x1b[?1049l\x1b[?2026l",
+    "\x1b[?2026h\x1b[r\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[?1007h\x1b[?1049l\x1b[?2026l",
   );
 });
 

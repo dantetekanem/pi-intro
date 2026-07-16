@@ -79,6 +79,7 @@ test("install paints the transcript reservation and canonical cluster at the ter
   assert.equal(terminal.writes.length, 1);
   const output = terminal.writes[0];
   assert.match(output, /\x1b\[1;6r/);
+  assert.ok(output.includes("\x1b[?1002h\x1b[?1006h"));
   assert.match(output, /TUI\(rows=6\):transcript-7\|transcript-8\|transcript-9\|transcript-10\|transcript-11\|transcript-12/);
   assert.match(output, /\x1b\[7;1H\x1b\[2Kstatus/);
   assert.match(output, /\x1b\[8;1H\x1b\[2Kabove-widget/);
@@ -110,6 +111,13 @@ test("fixed renders preserve stable Kitty IDs and delete only replaced or remove
   const stableImageOutput = terminal.writes.at(-1) ?? "";
   assert.equal(occurrences(stableImageOutput, kitty77), 1);
   assert.ok(!stableImageOutput.includes(delete77));
+  for (const row of [7, 8, 9, 10, 11]) {
+    assert.equal(
+      occurrences(stableImageOutput, `\x1b[${row};1H\x1b[2K`),
+      1,
+      `stable geometry must clear row ${row} only once while repainting it`,
+    );
+  }
 
   root.widget.lines = [kitty88, ""];
   tui.doRender();
@@ -127,22 +135,28 @@ test("fixed renders preserve stable Kitty IDs and delete only replaced or remove
   compositor.dispose();
 });
 
-test("visible overlays suspend reservation and resume it in coordinated renders", () => {
+test("visible overlays temporarily release the scroll region without switching screen buffers", () => {
   const { terminal, tui, compositor } = installFixture();
 
   tui.overlayVisible = true;
   tui.doRender();
   const suspended = terminal.writes.at(-1) ?? "";
-  assert.ok(suspended.includes("\x1b[r\x1b[?1007h\x1b[?1049l"));
+  assert.ok(suspended.includes("\x1b[r"));
+  assert.ok(!suspended.includes("\x1b[?1049l"));
+  assert.ok(!suspended.includes("\x1b[?1007h"));
   assert.match(suspended, /TUI\(rows=12\):/);
   assert.equal(occurrences(suspended, "footer"), 1);
   assert.equal(terminal.rows, 12);
   assert.deepEqual(tui.emitInput("\x1b[5~"), { consumed: false, data: "\x1b[5~" });
+  assert.deepEqual(tui.emitInput("\x1b[<64;20;10M"), {
+    consumed: true,
+    data: "\x1b[<64;20;10M",
+  });
 
   tui.overlayVisible = false;
   tui.doRender();
   const resumed = terminal.writes.at(-1) ?? "";
-  assert.ok(resumed.includes("\x1b[?1049h"));
+  assert.ok(!resumed.includes("\x1b[?1049h"));
   assert.ok(resumed.includes("\x1b[1;6r"));
   assert.match(resumed, /TUI\(rows=6\):/);
   assert.equal(terminal.rows, 6);
@@ -166,7 +180,7 @@ test("resize updates the scroll region and keeps the cluster bottom-aligned", ()
   compositor.dispose();
 });
 
-test("PageUp/PageDown scroll the transcript viewport without taking ordinary arrows", () => {
+test("keyboard and tmux SGR wheel input scroll the transcript without taking ordinary arrows", () => {
   const { terminal, tui, compositor } = installFixture();
 
   assert.deepEqual(tui.emitInput("\x1b[5~"), { consumed: true, data: "\x1b[5~" });
@@ -184,6 +198,16 @@ test("PageUp/PageDown scroll the transcript viewport without taking ordinary arr
   assert.match(
     terminal.writes.at(-1) ?? "",
     /TUI\(rows=6\):transcript-7\|transcript-8\|transcript-9\|transcript-10\|transcript-11\|transcript-12/,
+  );
+
+  assert.deepEqual(tui.emitInput("\x1b[<64;20;10M"), {
+    consumed: true,
+    data: "\x1b[<64;20;10M",
+  });
+  tui.doRender();
+  assert.match(
+    terminal.writes.at(-1) ?? "",
+    /TUI\(rows=6\):transcript-4\|transcript-5\|transcript-6\|transcript-7\|transcript-8\|transcript-9/,
   );
 
   compositor.dispose();
@@ -278,7 +302,9 @@ test("write failure after mode entry best-effort restores modes and rolls back h
   assert.equal(result.installed, false);
   assert.equal(terminal.writes.length, 2);
   assert.ok(terminal.writes[0].includes("\x1b[?1049h"));
-  assert.ok(terminal.writes[1].includes("\x1b[r\x1b[?1007h\x1b[?1049l"));
+  assert.ok(terminal.writes[0].includes("\x1b[?1002h\x1b[?1006h"));
+  assert.ok(terminal.writes[1].includes("\x1b[?1006l\x1b[?1002l\x1b[?1000l"));
+  assert.ok(terminal.writes[1].includes("\x1b[?1049l"));
   for (const output of terminal.writes) {
     assert.equal(occurrences(output, "\x1b[?2026h"), 1);
     assert.equal(occurrences(output, "\x1b[?2026l"), 1);
@@ -382,7 +408,7 @@ test("dispose is idempotent and restores descriptors, methods, listener, exit ho
   result.compositor.dispose();
   const writesAfterFirstDispose = terminal.writes.length;
   const restoreCount = terminal.writes.reduce(
-    (count, output) => count + occurrences(output, "\x1b[r\x1b[?1007h\x1b[?1049l"),
+    (count, output) => count + occurrences(output, "\x1b[?1049l"),
     0,
   );
   result.compositor.dispose();
@@ -407,7 +433,7 @@ test("process exit cleanup restores an entered mode exactly once", () => {
   processTarget.emit("exit");
   const writesAfterExit = terminal.writes.length;
   const restoreCount = terminal.writes.reduce(
-    (count, output) => count + occurrences(output, "\x1b[r\x1b[?1007h\x1b[?1049l"),
+    (count, output) => count + occurrences(output, "\x1b[?1049l"),
     0,
   );
   compositor.dispose();
@@ -621,6 +647,11 @@ test("disposal write failure restores the pre-disposal render state and removes 
   assert.equal(processTarget.exitListenerCount(), 0);
   assert.equal(Object.hasOwn(terminal, "rows"), false);
   assert.equal(Object.hasOwn(terminal, "write"), false);
+  const output = terminal.writes.join("");
+  assert.equal(occurrences(output, "\x1b[?1006l"), 1);
+  assert.equal(occurrences(output, "\x1b[?1002l"), 1);
+  assert.equal(occurrences(output, "\x1b[?1000l"), 1);
+  assert.equal(occurrences(output, "\x1b[?1049l"), 1);
   assertSafeWrites(terminal.writes);
 });
 
