@@ -2,6 +2,8 @@
 
 A cinematic startup overlay and true fixed-bottom editor cluster for [Pi](https://github.com/earendil-works/pi).
 
+![pi-intro demo](./demo.gif)
+
 ## Install
 
 ```bash
