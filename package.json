@@ -1,6 +1,6 @@
 {
   "name": "pi-intro",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A cinematic startup overlay and bottom spacer for Pi.",
   "type": "module",
   "homepage": "https://github.com/dantetekanem/pi-intro#readme",

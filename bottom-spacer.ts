@@ -51,7 +51,12 @@ export function installBottomSpacer(
       ...lines.slice(0, markerIndex),
       ...lines.slice(markerIndex + 1),
     ];
-    const missing = Math.max(0, tui.terminal.rows - linesWithoutMarker.length);
+    // Fail-closed: if the host renders above the terminal (overlays are
+    // composited on top later) or a resize left the buffer taller than the
+    // screen, never add padding that would push live content into scrollback.
+    if (linesWithoutMarker.length >= tui.terminal.rows) return linesWithoutMarker;
+
+    const missing = tui.terminal.rows - linesWithoutMarker.length;
 
     return [
       ...linesWithoutMarker.slice(0, markerIndex),
