@@ -24,7 +24,7 @@ test("auto-plays only for initial interactive startup", () => {
   }
 });
 
-test("uses a full-screen overlay and restores Pi when any key is pressed", async () => {
+test("uses a full-screen noncapturing overlay during autoplay", async () => {
   let receivedOptions: unknown;
   let doneCalls = 0;
   let renderRequests = 0;
@@ -43,7 +43,6 @@ test("uses a full-screen overlay and restores Pi when any key is pressed", async
           {},
           () => { doneCalls += 1; },
         );
-        component.handleInput("enter");
         component.dispose();
         return undefined;
       },
@@ -54,13 +53,14 @@ test("uses a full-screen overlay and restores Pi when any key is pressed", async
   assert.deepEqual(receivedOptions, FULL_SCREEN_OVERLAY_OPTIONS);
   assert.equal(FULL_SCREEN_OVERLAY_OPTIONS.overlay, true);
   assert.deepEqual(FULL_SCREEN_OVERLAY_OPTIONS.overlayOptions, {
+    nonCapturing: true,
     width: "100%",
     maxHeight: "100%",
     row: 0,
     col: 0,
     margin: 0,
   });
-  assert.equal(doneCalls, 1);
+  assert.equal(doneCalls, 0);
   assert.equal(renderRequests, 1);
 });
 

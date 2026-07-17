@@ -3,6 +3,7 @@ import { PiIntroComponent, type IntroTheme } from "./intro-component.ts";
 export const FULL_SCREEN_OVERLAY_OPTIONS = {
   overlay: true,
   overlayOptions: {
+    nonCapturing: true,
     width: "100%",
     maxHeight: "100%",
     row: 0,

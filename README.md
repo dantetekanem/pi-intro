@@ -10,7 +10,7 @@ A cinematic startup overlay for [Pi](https://github.com/earendil-works/pi).
 pi install git:github.com/dantetekanem/pi-intro
 ```
 
-Restart Pi. Press any key to skip the intro.
+Restart Pi. The intro completes automatically while Pi accepts typing immediately; typed input becomes visible after the opaque overlay closes.
 
 ## What it does
 
