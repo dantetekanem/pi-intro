@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_STYLE,
   INTRO_DURATION_MS,
   INTRO_HOLD_MS,
   INTRO_TRANSITION_MS,
   PiIntroComponent,
+  STYLE_PRESETS,
+  composeBlockWord,
+  resolveIntroStyle,
   type IntroScheduler,
 } from "../intro-component.ts";
 
@@ -256,4 +260,93 @@ test("any key still skips immediately during the completed-frame hold", () => {
 
   assert.equal(state.done, 1);
   assert.deepEqual(scheduler.cleared, [1, 3]);
+});
+
+test("resolveIntroStyle handles presets, objects, and bad input", () => {
+  assert.equal(resolveIntroStyle(undefined), DEFAULT_STYLE);
+  assert.deepEqual(resolveIntroStyle("pi"), {});
+  assert.deepEqual(resolveIntroStyle("shopify"), STYLE_PRESETS.shopify);
+  assert.deepEqual(resolveIntroStyle("winter"), STYLE_PRESETS.winter);
+  assert.equal(resolveIntroStyle("nope"), DEFAULT_STYLE);
+
+  const custom = { word: "LEO", hex: "#0ea5e9" };
+  assert.deepEqual(resolveIntroStyle(custom), custom);
+
+  assert.deepEqual(resolveIntroStyle({ word: "LEO", hex: "not-a-color" }), { word: "LEO" });
+});
+
+test("composeBlockWord renders 5-row glyphs with spaces and apostrophes", () => {
+  const lines = composeBlockWord("LET'S GO");
+  assert.equal(lines.length, 5);
+  assert.ok(lines[0].includes("█"), "letters render");
+
+  const unknown = composeBlockWord("A?B");
+  assert.equal(unknown.length, 5);
+  assert.ok(unknown[0].startsWith("████"), "known glyphs still render");
+});
+
+test("shopify preset renders SHOPIFY in #95bf47 with WELCOME BACK tagline in theme muted", () => {
+  const scheduler = new FakeScheduler();
+  const component = new PiIntroComponent({
+    host: { rows: 40, requestRender: () => {} },
+    theme,
+    scheduler,
+    onDone: () => {},
+    style: resolveIntroStyle("shopify"),
+  });
+  component.start();
+  scheduler.advance(INTRO_TRANSITION_MS - 600);
+
+  const lines = component.render(100);
+  const heroLine = lines.find((line) => line.includes("38;2;149;191;71"));
+  const taglineLine = lines.find((line) => line.replace(ANSI_PATTERN, "").includes("W E L C O M E"));
+
+  assert.ok(heroLine, "hero word uses Shopify green truecolor");
+  assert.ok(heroLine.includes("\x1b[1m"), "hero word is bold");
+  assert.ok(taglineLine, "tagline is rendered");
+  assert.ok(taglineLine.includes("\x1b[37m"), "tagline uses the theme fg color (muted path)");
+  assert.ok(!taglineLine.includes("38;2;"), "tagline is not brand-colored");
+  assert.ok(lines.every((line) => visibleWidth(line) === 100));
+
+  component.dispose();
+});
+
+test("long hero words stay within terminal width at common sizes", () => {
+  for (const preset of ["hacker", "coffee", "beast", "prof", "winter"] as const) {
+    const scheduler = new FakeScheduler();
+    const component = new PiIntroComponent({
+      host: { rows: 30, requestRender: () => {} },
+      theme,
+      scheduler,
+      onDone: () => {},
+      style: resolveIntroStyle(preset),
+    });
+    component.start();
+    scheduler.advance(INTRO_TRANSITION_MS - 600);
+
+    const lines = component.render(80);
+    assert.ok(
+      lines.every((line) => visibleWidth(line) === 80),
+      `${preset} lines are exactly 80 columns`,
+    );
+    assert.ok(
+      lines.some((line) => line.includes("38;2;")),
+      `${preset} hero word is brand-colored`,
+    );
+
+    component.dispose();
+  }
+});
+
+test("default pi style renders the classic PI logo with theme colors only", () => {
+  const { component, scheduler } = createComponent(40);
+  component.start();
+  scheduler.advance(INTRO_TRANSITION_MS - 100);
+
+  const lines = component.render(80);
+  assert.ok(lines.some((line) => line.includes("█")), "PI logo renders");
+  assert.ok(!lines.some((line) => line.includes("38;2;")), "no truecolor without a style");
+  assert.ok(!lines.some((line) => line.replace(ANSI_PATTERN, "").includes("WELCOME")), "no tagline by default");
+
+  component.dispose();
 });

@@ -12,9 +12,115 @@ const LOGO = [
   "╚═╝      ╚═╝",
 ] as const;
 
+const TAGLINE = "W E L C O M E   B A C K";
+
+/**
+ * 5-row full-block font matching the weight of the PI logo above.
+ * Each glyph is 4 columns wide; a one-column gap separates glyphs.
+ */
+const BLOCK_FONT: Record<string, readonly string[]> = {
+  " ": ["    ", "    ", "    ", "    ", "    "],
+  "'": ["█   ", "█   ", "    ", "    ", "    "],
+  A: ["████", "█  █", "████", "█  █", "█  █"],
+  B: ["████", "█  █", "████", "█  █", "████"],
+  C: ["████", "█   ", "█   ", "█   ", "████"],
+  D: ["███ ", "█  █", "█  █", "█  █", "███ "],
+  E: ["████", "█   ", "████", "█   ", "████"],
+  F: ["████", "█   ", "████", "█   ", "█   "],
+  G: ["████", "█   ", "█ ██", "█  █", "████"],
+  H: ["█  █", "█  █", "████", "█  █", "█  █"],
+  I: ["████", " ██ ", " ██ ", " ██ ", "████"],
+  J: ["████", "   █", "   █", "█  █", "████"],
+  K: ["█  █", "█ █ ", "██  ", "█ █ ", "█  █"],
+  L: ["█   ", "█   ", "█   ", "█   ", "████"],
+  M: ["█  █", "████", "████", "█  █", "█  █"],
+  N: ["█  █", "██ █", "█ ██", "█  █", "█  █"],
+  O: ["████", "█  █", "█  █", "█  █", "████"],
+  P: ["████", "█  █", "████", "█   ", "█   "],
+  Q: ["████", "█  █", "█ ██", "█  █", "████"],
+  R: ["████", "█  █", "████", "█ █ ", "█  █"],
+  S: ["████", "█   ", "████", "   █", "████"],
+  T: ["████", " ██ ", " ██ ", " ██ ", " ██ "],
+  U: ["█  █", "█  █", "█  █", "█  █", "████"],
+  V: ["█  █", "█  █", "█  █", "█  █", " ██ "],
+  W: ["█  █", "█  █", "████", "████", "█  █"],
+  X: ["█  █", "█  █", " ██ ", "█  █", "█  █"],
+  Y: ["█  █", "█  █", " ██ ", " ██ ", " ██ "],
+  Z: ["████", "   █", " ██ ", "█   ", "████"],
+};
+
+/** Compose a word into block-font banner lines. Unknown characters render as spaces. */
+export function composeBlockWord(word: string): string[] {
+  const glyphs = Array.from(word.toUpperCase()).map((character) => BLOCK_FONT[character] ?? BLOCK_FONT[" "]);
+  const rows = [0, 1, 2, 3, 4].map((row) =>
+    glyphs.map((glyph) => glyph[row]).join(" ").trimEnd(),
+  );
+  // Pad every row to the same width so centering aligns all rows into a
+  // clean rectangle (trimmed rows would otherwise center at different offsets).
+  const width = Math.max(...rows.map((row) => row.length));
+  return rows.map((row) => row.padEnd(width, " "));
+}
+
 export interface IntroTheme {
   fg(color: string, text: string): string;
   bold(text: string): string;
+}
+
+/**
+ * Cosmetic customization for the intro hero. The beam, rail, sweep, and status
+ * line always follow the live Pi theme; the style controls the big hero word,
+ * its color, and the tagline beneath it.
+ */
+export interface IntroStyle {
+  /** Big hero word (block font). Undefined renders the classic PI logo. */
+  word?: string;
+  /** 6-digit hex color for the hero word (e.g. "#95bf47"). Omit for the theme accent color. */
+  hex?: string;
+  /** Tagline rendered under the hero in the theme's muted color. */
+  tagline?: string;
+}
+
+export const STYLE_PRESETS = {
+  pi: {},
+  shopify: { word: "SHOPIFY", hex: "#95bf47", tagline: TAGLINE },
+  hacker: { word: "HACKER MODE", hex: "#00dc41", tagline: TAGLINE },
+  coffee: { word: "COFFEE TIME", hex: "#c08051", tagline: TAGLINE },
+  beast: { word: "BEAST MODE", hex: "#e74c3c", tagline: TAGLINE },
+  prof: { word: "PROFESSOR", hex: "#f1c40f", tagline: TAGLINE },
+  winter: { word: "WINTER IS COMING", hex: "#7fd4ff", tagline: TAGLINE },
+} as const satisfies Record<string, IntroStyle>;
+
+export type IntroStyleName = keyof typeof STYLE_PRESETS;
+
+export const DEFAULT_STYLE: IntroStyle = STYLE_PRESETS.pi;
+
+function isValidHex(hex: string): boolean {
+  return /^#?[0-9a-fA-F]{6}$/.test(hex.trim());
+}
+
+/**
+ * Resolve a user-supplied style (preset name or partial object). Unknown names
+ * fall back to DEFAULT_STYLE; invalid hex values are dropped (theme accent).
+ * Returns DEFAULT_STYLE itself when nothing customizes the intro.
+ */
+export function resolveIntroStyle(style?: IntroStyle | string): IntroStyle {
+  const base = typeof style === "string"
+    ? STYLE_PRESETS[style as IntroStyleName] ?? DEFAULT_STYLE
+    : style ?? DEFAULT_STYLE;
+  const resolved: IntroStyle = { ...base };
+  if (resolved.hex !== undefined && !isValidHex(resolved.hex)) delete resolved.hex;
+  return Object.keys(resolved).length === 0 ? DEFAULT_STYLE : resolved;
+}
+
+function hexToAnsiFg(hex: string): string | undefined {
+  const match = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!match) return undefined;
+
+  const value = Number.parseInt(match[1], 16);
+  const red = (value >> 16) & 0xff;
+  const green = (value >> 8) & 0xff;
+  const blue = value & 0xff;
+  return `\x1b[38;2;${red};${green};${blue}m`;
 }
 
 export interface IntroHost {
@@ -35,6 +141,7 @@ interface IntroComponentOptions {
   theme: IntroTheme;
   onDone: () => void;
   scheduler?: IntroScheduler;
+  style?: IntroStyle;
 }
 
 const systemScheduler: IntroScheduler = {
@@ -68,6 +175,7 @@ function styleLogoLine(
   sweep: number,
   fading: boolean,
   theme: IntroTheme,
+  brand?: string,
 ): string {
   const characters = Array.from(line);
   const center = (characters.length - 1) / 2;
@@ -77,8 +185,10 @@ function styleLogoLine(
   return characters.map((character, index) => {
     if (Math.abs(index - center) > radius || character === " ") return " ";
 
-    const color = fading ? "dim" : Math.abs(index - sweepColumn) < 1.25 ? "text" : "accent";
-    return theme.bold(theme.fg(color, character));
+    if (fading) return theme.bold(theme.fg("dim", character));
+    if (Math.abs(index - sweepColumn) < 1.25) return theme.bold(theme.fg("text", character));
+    if (brand !== undefined) return theme.bold(`${brand}${character}\x1b[39m`);
+    return theme.bold(theme.fg("accent", character));
   }).join("");
 }
 
@@ -91,6 +201,9 @@ export class PiIntroComponent {
   private readonly theme: IntroTheme;
   private readonly onDone: () => void;
   private readonly scheduler: IntroScheduler;
+  private readonly heroLines: readonly string[];
+  private readonly brand?: string;
+  private readonly tagline?: string;
   private startedAt: number | null = null;
   private animationTimer: unknown;
   private transitionTimer: unknown;
@@ -103,6 +216,11 @@ export class PiIntroComponent {
     this.theme = options.theme;
     this.onDone = options.onDone;
     this.scheduler = options.scheduler ?? systemScheduler;
+
+    const style = options.style ?? DEFAULT_STYLE;
+    this.heroLines = style.word === undefined ? LOGO : composeBlockWord(style.word);
+    this.brand = style.hex === undefined ? undefined : hexToAnsiFg(style.hex);
+    this.tagline = style.tagline;
   }
 
   start(): void {
@@ -132,7 +250,7 @@ export class PiIntroComponent {
     const fading = progress >= 0.88;
 
     if (rows < LOGO.length + 4 || safeWidth < LOGO[0].length + 4) {
-      const compact = progress < 0.16 ? "·" : "PI";
+      const compact = progress < 0.16 ? "·" : this.tagline === undefined ? "PI" : "·";
       const color = fading ? "dim" : "accent";
       placeCentered(lines, centerRow, safeWidth, this.theme.bold(this.theme.fg(color, compact)), compact.length);
       return lines;
@@ -158,14 +276,14 @@ export class PiIntroComponent {
     if (progress >= 0.24) {
       const reveal = clamp((progress - 0.24) / 0.34);
       const sweep = clamp((progress - 0.42) / 0.28);
-      const logoStart = centerRow - Math.floor(LOGO.length / 2);
+      const logoStart = centerRow - Math.floor(this.heroLines.length / 2);
 
-      LOGO.forEach((line, index) => {
+      this.heroLines.forEach((line, index) => {
         placeCentered(
           lines,
           logoStart + index,
           safeWidth,
-          styleLogoLine(line, reveal, sweep, fading, this.theme),
+          styleLogoLine(line, reveal, sweep, fading, this.theme, this.brand),
           line.length,
         );
       });
@@ -175,6 +293,12 @@ export class PiIntroComponent {
       const label = progress < 0.82 ? "INITIALIZING" : "PI · READY";
       const color = fading ? "dim" : "muted";
       placeCentered(lines, centerRow + Math.floor(LOGO.length / 2) + 2, safeWidth, this.theme.fg(color, label), label.length);
+    }
+
+    if (progress >= 0.64 && this.tagline !== undefined) {
+      const color = fading ? "dim" : "muted";
+      const taglineRow = centerRow + Math.floor(this.heroLines.length / 2) + 3;
+      placeCentered(lines, taglineRow, safeWidth, this.theme.fg(color, this.tagline), this.tagline.length);
     }
 
     return lines;

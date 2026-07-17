@@ -1,4 +1,10 @@
-import { PiIntroComponent, type IntroTheme } from "./intro-component.ts";
+import {
+  DEFAULT_STYLE,
+  PiIntroComponent,
+  resolveIntroStyle,
+  type IntroStyle,
+  type IntroTheme,
+} from "./intro-component.ts";
 
 export const FULL_SCREEN_OVERLAY_OPTIONS = {
   overlay: true,
@@ -33,8 +39,10 @@ export function shouldAutoPlay(reason: string, mode: string): boolean {
   return reason === "startup" && mode === "tui";
 }
 
-export async function playIntro(context: IntroContext): Promise<boolean> {
+export async function playIntro(context: IntroContext, style?: IntroStyle | string): Promise<boolean> {
   if (context.mode !== "tui") return false;
+
+  const resolvedStyle = resolveIntroStyle(style);
 
   await context.ui.custom<void>((tui, theme, _keybindings, done) => {
     const component = new PiIntroComponent({
@@ -46,6 +54,7 @@ export async function playIntro(context: IntroContext): Promise<boolean> {
       },
       theme: theme as IntroTheme,
       onDone: () => done(undefined),
+      ...(resolvedStyle === DEFAULT_STYLE ? {} : { style: resolvedStyle }),
     });
 
     component.start();

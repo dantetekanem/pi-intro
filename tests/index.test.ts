@@ -9,6 +9,7 @@ interface RegisteredHandlers {
 function register(options: {
   playIntro?: (context: any) => Promise<boolean>;
   installBottomSpacer?: (ui: any) => (() => void) | undefined;
+  registerCommand?: (pi: any, getStyle: () => any, apply: (style: any, ctx: any) => Promise<void>) => void;
 } = {}): RegisteredHandlers {
   const registered: RegisteredHandlers = { events: new Map() };
   const pi = {
@@ -21,6 +22,7 @@ function register(options: {
     pi as any,
     options.playIntro ?? (async () => true),
     options.installBottomSpacer ?? (() => undefined),
+    options.registerCommand ?? (() => {}),
   );
   return registered;
 }
