@@ -9,7 +9,7 @@ import {
 export const FULL_SCREEN_OVERLAY_OPTIONS = {
   overlay: true,
   overlayOptions: {
-    nonCapturing: true,
+    nonCapturing: false,
     width: "100%",
     maxHeight: "100%",
     row: 0,

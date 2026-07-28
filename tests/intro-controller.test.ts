@@ -24,7 +24,7 @@ test("auto-plays only for initial interactive startup", () => {
   }
 });
 
-test("uses a full-screen noncapturing overlay during autoplay", async () => {
+test("uses a full-screen capturing overlay so any key reaches the intro", async () => {
   let receivedOptions: unknown;
   let doneCalls = 0;
   let renderRequests = 0;
@@ -53,7 +53,7 @@ test("uses a full-screen noncapturing overlay during autoplay", async () => {
   assert.deepEqual(receivedOptions, FULL_SCREEN_OVERLAY_OPTIONS);
   assert.equal(FULL_SCREEN_OVERLAY_OPTIONS.overlay, true);
   assert.deepEqual(FULL_SCREEN_OVERLAY_OPTIONS.overlayOptions, {
-    nonCapturing: true,
+    nonCapturing: false,
     width: "100%",
     maxHeight: "100%",
     row: 0,
