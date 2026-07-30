@@ -1,3 +1,4 @@
+import { parseArgs } from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_STYLE,
   PiIntroComponent,
@@ -33,6 +34,11 @@ export interface IntroContext {
       options: typeof FULL_SCREEN_OVERLAY_OPTIONS,
     ): Promise<T | undefined>;
   };
+}
+
+export function hasInitialArgvPayload(argv: readonly string[]): boolean {
+  const parsed = parseArgs([...argv]);
+  return parsed.messages.length > 0 || parsed.fileArgs.length > 0;
 }
 
 export function shouldAutoPlay(reason: string, mode: string): boolean {

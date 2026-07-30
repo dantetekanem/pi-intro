@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { installBottomSpacer } from "./bottom-spacer.ts";
-import { playIntro, type IntroContext } from "./intro-controller.ts";
+import { hasInitialArgvPayload, playIntro, shouldAutoPlay, type IntroContext } from "./intro-controller.ts";
 import { registerIntroCommand } from "./intro-command.ts";
 import { configToStyle, loadIntroConfig, saveIntroConfig, styleToConfig } from "./intro-config.ts";
 import { resolveIntroStyle, type IntroStyle } from "./intro-component.ts";
@@ -39,7 +39,9 @@ export default function piIntroExtension(
   introPlayer = playIntro,
   spacerInstaller = installBottomSpacer,
   commandRegistrar: typeof registerIntroCommand = registerIntroCommand,
+  startupArgv: readonly string[] = process.argv.slice(2),
 ): void {
+  const hasInitialPayload = hasInitialArgvPayload(startupArgv);
   let generation = 0;
   let removeSpacer: (() => void) | undefined;
   // Session-level style: startup value, /pi-intro updates it live and persists it.
@@ -52,7 +54,7 @@ export default function piIntroExtension(
     const sessionGeneration = ++generation;
 
     void (async () => {
-      if (event.reason === "startup") {
+      if (shouldAutoPlay(event.reason, context.mode) && !hasInitialPayload) {
         sessionStyle = startupStyle();
         await playWithSessionStyle(context as IntroContext);
       }

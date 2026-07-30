@@ -10,6 +10,7 @@ function register(options: {
   playIntro?: (context: any) => Promise<boolean>;
   installBottomSpacer?: (ui: any) => (() => void) | undefined;
   registerCommand?: (pi: any, getStyle: () => any, apply: (style: any, ctx: any) => Promise<void>) => void;
+  startupArgv?: readonly string[];
 } = {}): RegisteredHandlers {
   const registered: RegisteredHandlers = { events: new Map() };
   const pi = {
@@ -23,6 +24,7 @@ function register(options: {
     options.playIntro ?? (async () => true),
     options.installBottomSpacer ?? (() => undefined),
     options.registerCommand ?? (() => {}),
+    options.startupArgv ?? [],
   );
   return registered;
 }
@@ -71,6 +73,55 @@ test("session_start stays nonblocking and installs after the startup intro", asy
 
   assert.deepEqual(calls, ["intro", "spacer"]);
   assert.equal(installedUi, ui);
+});
+
+test("startup input skips the intro and still installs the spacer", async () => {
+  for (const startupArgv of [
+    ["--append-system-prompt", "Commander completion callback", "/diff remote https://github.com/Shopify/incentives/pull/5613"],
+    ["@README.md"],
+  ]) {
+    let introCalls = 0;
+    let installs = 0;
+    const registered = register({
+      startupArgv,
+      playIntro: async () => {
+        introCalls += 1;
+        return true;
+      },
+      installBottomSpacer: () => {
+        installs += 1;
+        return () => {};
+      },
+    });
+
+    registered.events.get("session_start")!(
+      { reason: "startup" },
+      { mode: "tui", ui: {} },
+    );
+    await Promise.resolve();
+
+    assert.equal(introCalls, 0);
+    assert.equal(installs, 1);
+  }
+});
+
+test("startup flags without initial input still play the intro", async () => {
+  let introCalls = 0;
+  const registered = register({
+    startupArgv: ["--append-system-prompt", "context only"],
+    playIntro: async () => {
+      introCalls += 1;
+      return true;
+    },
+  });
+
+  registered.events.get("session_start")!(
+    { reason: "startup" },
+    { mode: "tui", ui: {} },
+  );
+  await Promise.resolve();
+
+  assert.equal(introCalls, 1);
 });
 
 test("stale startup intro completion does not install a spacer", async () => {
