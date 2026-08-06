@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.2 - 2026-08-06
+
 ### Changed
 
 - Refined the Shopify preset so the surrounding letters dissolve in place while PI stays fixed and transitions from Shopify green to the active theme accent.
