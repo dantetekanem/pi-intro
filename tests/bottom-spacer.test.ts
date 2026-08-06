@@ -16,6 +16,7 @@ function createHarness(
   beforeStatus: string[],
   status: string[],
   afterStatus: string[],
+  dynamicTuiReference = false,
 ) {
   let renderCalls = 0;
   let renderRequests = 0;
@@ -43,9 +44,24 @@ function createHarness(
     },
   };
   const originalRender = tui.render;
+  const candidateTui = dynamicTuiReference
+    ? new Proxy({} as typeof tui, {
+      get: (_target, property) => {
+        const value = Reflect.get(tui, property, tui);
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          const method = Reflect.get(tui, property, tui);
+          if (typeof method !== "function") throw new TypeError(`${String(property)} is not callable`);
+          return Reflect.apply(method, tui, args);
+        };
+      },
+      set: (_target, property, value) => Reflect.set(tui, property, value, tui),
+      getPrototypeOf: () => Reflect.getPrototypeOf(tui),
+    })
+    : tui;
   const ui = {
     setWidget(_key: string, content: Function | undefined) {
-      widgetContainer.children = content ? [content(tui, {})] : [];
+      widgetContainer.children = content ? [content(candidateTui, {})] : [];
     },
   };
 
@@ -148,6 +164,24 @@ test("cleanup does not overwrite a later render owner", () => {
   assert.equal(harness.tui.render, laterRender);
   assert.equal(harness.rootChildCount, harness.originalRootChildCount);
   assert.equal(harness.renderRequests, 2);
+});
+
+test("installer fails closed when Pi supplies a dynamic TUI reference", () => {
+  const harness = createHarness(
+    8,
+    ["transcript", "notice"],
+    ["status"],
+    ["editor", "footer"],
+    true,
+  );
+
+  const cleanup = installBottomSpacer(harness.ui as any);
+
+  assert.doesNotThrow(() => harness.tui.render(80));
+  assert.equal(cleanup, undefined);
+  assert.equal(harness.tui.render, harness.originalRender);
+  assert.equal(harness.hasWidget, false);
+  assert.equal(harness.rootChildCount, harness.originalRootChildCount);
 });
 
 test("installer fails closed when setWidget does not expose the TUI synchronously", () => {

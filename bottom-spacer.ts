@@ -27,6 +27,12 @@ export function installBottomSpacer(
     return undefined;
   }
 
+  const originalRender = tui.render;
+  if (originalRender !== tui.render) {
+    ui.setWidget(widgetKey, undefined);
+    return undefined;
+  }
+
   const widgetContainerIndex = tui.children.findIndex((child) => {
     if (!child || typeof child !== "object") return false;
     const children = (child as { children?: unknown }).children;
@@ -41,7 +47,6 @@ export function installBottomSpacer(
   tui.children.splice(widgetContainerIndex - 1, 0, markerComponent);
   markerActive = true;
 
-  const originalRender = tui.render;
   const renderWithBottomSpacer = (width: number): string[] => {
     const lines = originalRender.call(tui, width);
     const markerIndex = lines.indexOf(marker);
