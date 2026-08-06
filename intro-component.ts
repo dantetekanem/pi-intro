@@ -3,6 +3,14 @@ export const INTRO_HOLD_MS = 750;
 export const INTRO_DURATION_MS = INTRO_TRANSITION_MS + INTRO_HOLD_MS;
 export const INTRO_FRAME_MS = 45;
 
+const SHOPIFY_REVEAL_END_MS = 980;
+const SHOPIFY_VANISH_START_MS = 1260;
+export const SHOPIFY_VANISH_END_MS = 1820;
+export const SHOPIFY_PI_COLOR_MS = 420;
+export const SHOPIFY_TRANSITION_MS = SHOPIFY_VANISH_END_MS + SHOPIFY_PI_COLOR_MS;
+export const SHOPIFY_HOLD_MS = 525;
+export const SHOPIFY_FRAME_MS = 24;
+
 const LOGO = [
   "██████╗  ██╗",
   "██╔══██╗ ██║",
@@ -48,6 +56,12 @@ const BLOCK_FONT: Record<string, readonly string[]> = {
   Y: ["█  █", "█  █", " ██ ", " ██ ", " ██ "],
   Z: ["████", "   █", " ██ ", "█   ", "████"],
 };
+
+const SHOPIFY_WORD = "SHOPIFY";
+const SHOPIFY_PI_START_INDEX = 3;
+const SHOPIFY_PI_END_INDEX = 4;
+const SHOPIFY_WORD_WIDTH = SHOPIFY_WORD.length * 5 - 1;
+const SHOPIFY_DISSOLVE_GLYPHS = ["█", "▓", "▒", "░", " "] as const;
 
 /** Compose a word into block-font banner lines. Unknown characters render as spaces. */
 export function composeBlockWord(word: string): string[] {
@@ -192,6 +206,63 @@ function styleLogoLine(
   }).join("");
 }
 
+function parseTrueColor(styled: string | undefined): readonly [number, number, number] | undefined {
+  if (styled === undefined) return undefined;
+  const match = /\x1b\[38;2;(\d+);(\d+);(\d+)m/.exec(styled);
+  if (match === null) return undefined;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function stylePiGlyph(
+  glyph: string,
+  progress: number,
+  theme: IntroTheme,
+  brand?: string,
+): string {
+  const clampedProgress = clamp(progress);
+  if (clampedProgress >= 1) return theme.bold(theme.fg("accent", glyph));
+
+  const from = parseTrueColor(brand);
+  const to = parseTrueColor(theme.fg("accent", "█"));
+  if (from !== undefined && to !== undefined) {
+    const easedProgress = clampedProgress * clampedProgress * (3 - 2 * clampedProgress);
+    const color = from.map((channel, index) =>
+      Math.round(channel + ((to[index] ?? channel) - channel) * easedProgress)
+    );
+    return theme.bold(`\x1b[38;2;${color[0]};${color[1]};${color[2]}m${glyph}\x1b[39m`);
+  }
+
+  if (clampedProgress >= 0.5) return theme.bold(theme.fg("accent", glyph));
+  if (brand !== undefined) return theme.bold(`${brand}${glyph}\x1b[39m`);
+  return theme.bold(theme.fg("accent", glyph));
+}
+
+function styleShopifyWordRow(
+  row: number,
+  vanishProgress: number,
+  piColorProgress: number,
+  theme: IntroTheme,
+  brand?: string,
+): string {
+  const dissolveIndex = Math.min(
+    SHOPIFY_DISSOLVE_GLYPHS.length - 1,
+    Math.floor(clamp(vanishProgress) * SHOPIFY_DISSOLVE_GLYPHS.length),
+  );
+  const dissolveGlyph = SHOPIFY_DISSOLVE_GLYPHS[dissolveIndex] ?? " ";
+
+  return Array.from(SHOPIFY_WORD).map((character, index) => {
+    const glyph = (BLOCK_FONT[character] ?? BLOCK_FONT[" "])[row] ?? "    ";
+    const isPi = index >= SHOPIFY_PI_START_INDEX && index <= SHOPIFY_PI_END_INDEX;
+
+    if (isPi) return stylePiGlyph(glyph, piColorProgress, theme, brand);
+
+    const renderedGlyph = glyph.replaceAll("█", dissolveGlyph);
+    if (dissolveGlyph === " ") return renderedGlyph;
+    if (brand !== undefined) return theme.bold(`${brand}${renderedGlyph}\x1b[39m`);
+    return theme.bold(theme.fg("accent", renderedGlyph));
+  }).join(" ");
+}
+
 /**
  * Full-viewport, terminal-native PI reveal. It never writes to stdout or owns
  * the terminal buffer; Pi's overlay renderer remains the sole screen owner.
@@ -204,6 +275,10 @@ export class PiIntroComponent {
   private readonly heroLines: readonly string[];
   private readonly brand?: string;
   private readonly tagline?: string;
+  private readonly shopifySequence: boolean;
+  private readonly transitionDuration: number;
+  private readonly holdDuration: number;
+  private readonly frameDuration: number;
   private startedAt: number | null = null;
   private animationTimer: unknown;
   private transitionTimer: unknown;
@@ -221,17 +296,21 @@ export class PiIntroComponent {
     this.heroLines = style.word === undefined ? LOGO : composeBlockWord(style.word);
     this.brand = style.hex === undefined ? undefined : hexToAnsiFg(style.hex);
     this.tagline = style.tagline;
+    this.shopifySequence = style.word?.trim().toUpperCase() === SHOPIFY_WORD;
+    this.transitionDuration = this.shopifySequence ? SHOPIFY_TRANSITION_MS : INTRO_TRANSITION_MS;
+    this.holdDuration = this.shopifySequence ? SHOPIFY_HOLD_MS : INTRO_HOLD_MS;
+    this.frameDuration = this.shopifySequence ? SHOPIFY_FRAME_MS : INTRO_FRAME_MS;
   }
 
   start(): void {
     if (this.startedAt !== null || this.finished) return;
 
     this.startedAt = this.scheduler.now();
-    this.animationTimer = this.scheduler.setInterval(() => this.tick(), INTRO_FRAME_MS);
+    this.animationTimer = this.scheduler.setInterval(() => this.tick(), this.frameDuration);
     this.transitionTimer = this.scheduler.setTimeout(() => {
       this.transitionTimer = undefined;
       this.beginHold();
-    }, INTRO_TRANSITION_MS);
+    }, this.transitionDuration);
     this.host.requestRender();
   }
 
@@ -245,12 +324,36 @@ export class PiIntroComponent {
     const lines = Array.from({ length: rows }, () => fillLine(safeWidth));
     if (safeWidth === 0) return lines;
 
-    const progress = this.progress();
+    let progress = this.progress();
+    const heroLines = this.heroLines;
+    const brand = this.brand;
+    const tagline = this.tagline;
+
+    if (this.shopifySequence) {
+      const elapsed = this.elapsed();
+      if (rows < LOGO.length + 4 || safeWidth < SHOPIFY_WORD_WIDTH + 2) {
+        return this.renderCompactShopify(safeWidth, rows, elapsed);
+      }
+      if (elapsed < SHOPIFY_VANISH_START_MS) {
+        progress = clamp(elapsed / SHOPIFY_REVEAL_END_MS) * 0.86;
+      } else if (elapsed < SHOPIFY_VANISH_END_MS) {
+        const vanishProgress = clamp(
+          (elapsed - SHOPIFY_VANISH_START_MS) / (SHOPIFY_VANISH_END_MS - SHOPIFY_VANISH_START_MS),
+        );
+        return this.renderShopifyWord(safeWidth, rows, vanishProgress, 0);
+      } else {
+        const piColorProgress = clamp(
+          (elapsed - SHOPIFY_VANISH_END_MS) / (SHOPIFY_TRANSITION_MS - SHOPIFY_VANISH_END_MS),
+        );
+        return this.renderShopifyWord(safeWidth, rows, 1, piColorProgress);
+      }
+    }
+
     const centerRow = Math.floor(rows / 2);
     const fading = progress >= 0.88;
 
     if (rows < LOGO.length + 4 || safeWidth < LOGO[0].length + 4) {
-      const compact = progress < 0.16 ? "·" : this.tagline === undefined ? "PI" : "·";
+      const compact = progress < 0.16 ? "·" : tagline === undefined ? "PI" : "·";
       const color = fading ? "dim" : "accent";
       placeCentered(lines, centerRow, safeWidth, this.theme.bold(this.theme.fg(color, compact)), compact.length);
       return lines;
@@ -276,14 +379,14 @@ export class PiIntroComponent {
     if (progress >= 0.24) {
       const reveal = clamp((progress - 0.24) / 0.34);
       const sweep = clamp((progress - 0.42) / 0.28);
-      const logoStart = centerRow - Math.floor(this.heroLines.length / 2);
+      const logoStart = centerRow - Math.floor(heroLines.length / 2);
 
-      this.heroLines.forEach((line, index) => {
+      heroLines.forEach((line, index) => {
         placeCentered(
           lines,
           logoStart + index,
           safeWidth,
-          styleLogoLine(line, reveal, sweep, fading, this.theme, this.brand),
+          styleLogoLine(line, reveal, sweep, fading, this.theme, brand),
           line.length,
         );
       });
@@ -295,12 +398,56 @@ export class PiIntroComponent {
       placeCentered(lines, centerRow + Math.floor(LOGO.length / 2) + 2, safeWidth, this.theme.fg(color, label), label.length);
     }
 
-    if (progress >= 0.64 && this.tagline !== undefined) {
+    if (progress >= 0.64 && tagline !== undefined) {
       const color = fading ? "dim" : "muted";
-      const taglineRow = centerRow + Math.floor(this.heroLines.length / 2) + 3;
-      placeCentered(lines, taglineRow, safeWidth, this.theme.fg(color, this.tagline), this.tagline.length);
+      const taglineRow = centerRow + Math.floor(heroLines.length / 2) + 3;
+      placeCentered(lines, taglineRow, safeWidth, this.theme.fg(color, tagline), tagline.length);
     }
 
+    return lines;
+  }
+
+  private renderShopifyWord(
+    width: number,
+    rows: number,
+    vanishProgress: number,
+    piColorProgress: number,
+  ): string[] {
+    const lines = Array.from({ length: rows }, () => fillLine(width));
+    const centerRow = Math.floor(rows / 2);
+    const heroStart = centerRow - 2;
+
+    for (let row = 0; row < 5; row += 1) {
+      placeCentered(
+        lines,
+        heroStart + row,
+        width,
+        styleShopifyWordRow(row, vanishProgress, piColorProgress, this.theme, this.brand),
+        SHOPIFY_WORD_WIDTH,
+      );
+    }
+
+    if (this.tagline !== undefined && vanishProgress < 0.65) {
+      const color = vanishProgress < 0.35 ? "muted" : "dim";
+      const taglineRow = centerRow + 5;
+      placeCentered(lines, taglineRow, width, this.theme.fg(color, this.tagline), this.tagline.length);
+    }
+
+    return lines;
+  }
+
+  private renderCompactShopify(width: number, rows: number, elapsed: number): string[] {
+    const lines = Array.from({ length: rows }, () => fillLine(width));
+    const label = elapsed < SHOPIFY_VANISH_END_MS && width >= SHOPIFY_WORD.length ? SHOPIFY_WORD : "PI";
+    const fading = elapsed / SHOPIFY_TRANSITION_MS >= 0.88;
+    const color = fading ? "dim" : "accent";
+    placeCentered(
+      lines,
+      Math.floor(rows / 2),
+      width,
+      this.theme.bold(this.theme.fg(color, label)),
+      label.length,
+    );
     return lines;
   }
 
@@ -318,7 +465,7 @@ export class PiIntroComponent {
   }
 
   private progress(): number {
-    return clamp(this.elapsed() / INTRO_TRANSITION_MS);
+    return clamp(this.elapsed() / this.transitionDuration);
   }
 
   private tick(): void {
@@ -334,7 +481,7 @@ export class PiIntroComponent {
     this.holdTimer = this.scheduler.setTimeout(() => {
       this.holdTimer = undefined;
       this.finish();
-    }, INTRO_HOLD_MS);
+    }, this.holdDuration);
   }
 
   private finish(): void {

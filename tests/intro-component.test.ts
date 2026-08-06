@@ -6,6 +6,11 @@ import {
   INTRO_HOLD_MS,
   INTRO_TRANSITION_MS,
   PiIntroComponent,
+  SHOPIFY_FRAME_MS,
+  SHOPIFY_HOLD_MS,
+  SHOPIFY_PI_COLOR_MS,
+  SHOPIFY_TRANSITION_MS,
+  SHOPIFY_VANISH_END_MS,
   STYLE_PRESETS,
   composeBlockWord,
   resolveIntroStyle,
@@ -309,6 +314,67 @@ test("shopify preset renders SHOPIFY in #95bf47 with WELCOME BACK tagline in the
   assert.ok(lines.every((line) => visibleWidth(line) === 100));
 
   component.dispose();
+});
+
+test("shopify dissolves the surrounding letters and fluidly recolors PI without moving it", () => {
+  const scheduler = new FakeScheduler();
+  const state = { done: 0 };
+  const fluidTheme = {
+    fg: (color: string, text: string) => color === "accent"
+      ? `\x1b[38;2;189;147;249m${text}\x1b[0m`
+      : `\x1b[37m${text}\x1b[0m`,
+    bold: theme.bold,
+  };
+  const component = new PiIntroComponent({
+    host: { rows: 40, requestRender: () => {} },
+    theme: fluidTheme,
+    scheduler,
+    onDone: () => { state.done += 1; },
+    style: resolveIntroStyle("shopify"),
+  });
+  component.start();
+
+  scheduler.advance(SHOPIFY_VANISH_END_MS - 280);
+  const dissolving = component.render(100).map((line) => line.replace(ANSI_PATTERN, ""));
+  assert.ok(dissolving.some((line) => line.includes("▒")), "SHO and FY dissolve in place through lighter glyphs");
+
+  scheduler.advance(280);
+  const collapsed = component.render(100).map((line) => line.replace(ANSI_PATTERN, ""));
+  const collapsedBlocks = collapsed.slice(18, 23).map((line) => line.trim());
+  assert.deepEqual(collapsedBlocks, composeBlockWord("PI").map((line) => line.trim()));
+  const collapsedColumns = collapsed.flatMap((line) =>
+    Array.from(line, (character, column) => character === "█" ? column : -1).filter((column) => column >= 0),
+  );
+  const collapsedCenter = (Math.min(...collapsedColumns) + Math.max(...collapsedColumns)) / 2;
+  assert.ok(collapsedCenter > 50, "PI stays in its original SHOPIFY position after the surrounding letters are gone");
+
+  scheduler.advance(SHOPIFY_PI_COLOR_MS / 2);
+  const halfwayFrame = component.render(100);
+  assert.ok(halfwayFrame.some((line) => line.includes("38;2;169;169;160")), "PI color interpolates every frame");
+
+  scheduler.advance(SHOPIFY_PI_COLOR_MS / 2);
+  const completedFrame = component.render(100);
+  const completed = completedFrame.map((line) => line.replace(ANSI_PATTERN, ""));
+  const completedBlocks = completed.slice(18, 23).map((line) => line.trim());
+  assert.deepEqual(completedBlocks, composeBlockWord("PI").map((line) => line.trim()));
+  const completedColumns = completed.flatMap((line) =>
+    Array.from(line, (character, column) => character === "█" ? column : -1).filter((column) => column >= 0),
+  );
+  const completedCenter = (Math.min(...completedColumns) + Math.max(...completedColumns)) / 2;
+  assert.equal(completedCenter, collapsedCenter, "PI never moves while changing to purple");
+  assert.ok(!completed.some((line) => line.includes("██████╗  ██╗")), "the classic PI logo never replaces the remaining glyph");
+  assert.ok(!completedFrame.some((line) => line.includes("38;2;149;191;71")), "Shopify green is gone from the final PI");
+  assert.ok(completedFrame.some((line) => line.includes("38;2;189;147;249")), "the final PI uses the purple theme accent");
+  assert.ok(completed.every((line) => line.length === 100));
+  assert.equal(state.done, 0);
+  assert.equal(SHOPIFY_PI_COLOR_MS, 420);
+  assert.equal(SHOPIFY_TRANSITION_MS, 2240);
+  assert.equal(SHOPIFY_HOLD_MS, 525);
+  assert.equal(SHOPIFY_FRAME_MS, 24);
+  assert.ok(SHOPIFY_TRANSITION_MS > INTRO_TRANSITION_MS);
+
+  scheduler.advance(SHOPIFY_HOLD_MS);
+  assert.equal(state.done, 1);
 });
 
 test("long hero words stay within terminal width at common sizes", () => {

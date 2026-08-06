@@ -14,8 +14,7 @@ Restart Pi. The intro completes automatically, or press any key to skip it.
 
 ## What it does
 
-- Animates a centered PI reveal for 1.8 seconds, then holds the completed frame for exactly 750 ms.
-- Lets Pi continue its remaining post-TUI startup work behind the overlay instead of blocking it for 2.55 seconds.
+- Lets Pi continue its remaining post-TUI startup work behind the overlay instead of blocking startup on the animation.
 - Starts at Pi's supported `session_start` hook, so a brief normal Pi frame may appear first; initial extension and skill discovery has already completed.
 
 ## Customization
