@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import piIntroExtension from "../index.ts";
+import piIntroExtension, { hasInitialCliInput } from "../index.ts";
 
 interface RegisteredHandlers {
   readonly events: Map<string, Function>;
@@ -10,6 +10,7 @@ function register(options: {
   playIntro?: (context: any) => Promise<boolean>;
   installBottomSpacer?: (ui: any) => (() => void) | undefined;
   registerCommand?: (pi: any, getStyle: () => any, apply: (style: any, ctx: any) => Promise<void>) => void;
+  hasInitialInput?: () => boolean;
 } = {}): RegisteredHandlers {
   const registered: RegisteredHandlers = { events: new Map() };
   const pi = {
@@ -23,6 +24,7 @@ function register(options: {
     options.playIntro ?? (async () => true),
     options.installBottomSpacer ?? (() => undefined),
     options.registerCommand ?? (() => {}),
+    options.hasInitialInput ?? (() => false),
   );
   return registered;
 }
@@ -31,6 +33,18 @@ test("registers only session lifecycle", () => {
   const registered = register();
 
   assert.deepEqual([...registered.events.keys()], ["session_start", "session_shutdown"]);
+});
+
+test("detects initial command-line prompts and file inputs", () => {
+  assert.equal(hasInitialCliInput([]), false);
+  assert.equal(hasInitialCliInput(["something"]), true);
+  assert.equal(hasInitialCliInput(["@prompt.md"]), true);
+  assert.equal(hasInitialCliInput(["--model", "openai/gpt-5", "something"]), true);
+  assert.equal(hasInitialCliInput(["--continue", "something"]), true);
+  assert.equal(hasInitialCliInput(["-p", "something"]), true);
+  assert.equal(hasInitialCliInput(["--model", "openai/gpt-5"]), false);
+  assert.equal(hasInitialCliInput(["--name", "my session"]), false);
+  assert.equal(hasInitialCliInput(["--plan", "something"]), false);
 });
 
 test("session_start stays nonblocking and installs after the startup intro", async () => {
@@ -71,6 +85,34 @@ test("session_start stays nonblocking and installs after the startup intro", asy
 
   assert.deepEqual(calls, ["intro", "spacer"]);
   assert.equal(installedUi, ui);
+});
+
+test("startup with initial command-line input skips the intro but installs the spacer", async () => {
+  const calls: string[] = [];
+  let installationFinished!: () => void;
+  const installed = new Promise<void>((resolve) => {
+    installationFinished = resolve;
+  });
+  const registered = register({
+    playIntro: async () => {
+      calls.push("intro");
+      return true;
+    },
+    installBottomSpacer: () => {
+      calls.push("spacer");
+      installationFinished();
+      return () => {};
+    },
+    hasInitialInput: () => true,
+  });
+
+  registered.events.get("session_start")!(
+    { reason: "startup" },
+    { mode: "tui", ui: {} },
+  );
+  await installed;
+
+  assert.deepEqual(calls, ["spacer"]);
 });
 
 test("stale startup intro completion does not install a spacer", async () => {

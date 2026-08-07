@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.3 - 2026-08-07
+
+### Changed
+
+- Skip the startup intro when Pi launches with an initial command-line prompt or file.
+
 ## 0.2.2 - 2026-08-06
 
 ### Changed
