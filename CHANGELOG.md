@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Use Pi's public CLI parser for startup input detection instead of maintaining a duplicate flag list.
+- Require Pi 0.80.7 or newer.
+
 ## 0.2.3 - 2026-08-07
 
 ### Changed
