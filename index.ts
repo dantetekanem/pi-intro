@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { parseArgs, type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { installBottomSpacer } from "./bottom-spacer.ts";
 import { playIntro, type IntroContext } from "./intro-controller.ts";
 import { registerIntroCommand } from "./intro-command.ts";
@@ -34,80 +34,9 @@ function definedOnly(style: IntroStyle): IntroStyle {
   return out;
 }
 
-const VALUE_FLAGS = new Set([
-  "--provider",
-  "--model",
-  "--api-key",
-  "--system-prompt",
-  "--append-system-prompt",
-  "--name",
-  "-n",
-  "--session",
-  "--session-id",
-  "--fork",
-  "--session-dir",
-  "--models",
-  "--tools",
-  "-t",
-  "--exclude-tools",
-  "-xt",
-  "--thinking",
-  "--mode",
-  "--export",
-  "--extension",
-  "-e",
-  "--skill",
-  "--prompt-template",
-  "--theme",
-  "--tui-mode",
-]);
-
-const BOOLEAN_FLAGS = new Set([
-  "--continue",
-  "-c",
-  "--resume",
-  "-r",
-  "--no-session",
-  "--no-tools",
-  "-nt",
-  "--no-builtin-tools",
-  "-nbt",
-  "--no-extensions",
-  "-ne",
-  "--no-skills",
-  "-ns",
-  "--no-prompt-templates",
-  "-np",
-  "--no-themes",
-  "--no-context-files",
-  "-nc",
-  "--verbose",
-  "--approve",
-  "-a",
-  "--no-approve",
-  "-na",
-  "--offline",
-  "--print",
-  "-p",
-]);
-
 export function hasInitialCliInput(args = process.argv.slice(2)): boolean {
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg.startsWith("@")) return true;
-    if (VALUE_FLAGS.has(arg)) {
-      index += 1;
-      continue;
-    }
-    if (BOOLEAN_FLAGS.has(arg)) continue;
-    if (arg.startsWith("--")) {
-      const next = args[index + 1];
-      if (!arg.includes("=") && next !== undefined && !next.startsWith("-") && !next.startsWith("@")) index += 1;
-      continue;
-    }
-    if (!arg.startsWith("-")) return true;
-  }
-  return false;
+  const parsed = parseArgs(args);
+  return parsed.messages.length > 0 || parsed.fileArgs.length > 0;
 }
 
 export default function piIntroExtension(

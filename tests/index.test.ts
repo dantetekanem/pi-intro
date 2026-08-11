@@ -40,10 +40,13 @@ test("detects initial command-line prompts and file inputs", () => {
   assert.equal(hasInitialCliInput(["something"]), true);
   assert.equal(hasInitialCliInput(["@prompt.md"]), true);
   assert.equal(hasInitialCliInput(["--model", "openai/gpt-5", "something"]), true);
+  assert.equal(hasInitialCliInput(["--append-system-prompt", "context only", "something"]), true);
   assert.equal(hasInitialCliInput(["--continue", "something"]), true);
   assert.equal(hasInitialCliInput(["-p", "something"]), true);
+  assert.equal(hasInitialCliInput(["-p", "---literal prompt"]), true);
   assert.equal(hasInitialCliInput(["--model", "openai/gpt-5"]), false);
   assert.equal(hasInitialCliInput(["--name", "my session"]), false);
+  assert.equal(hasInitialCliInput(["--append-system-prompt", "context only"]), false);
   assert.equal(hasInitialCliInput(["--plan", "something"]), false);
 });
 

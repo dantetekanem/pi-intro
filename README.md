@@ -4,6 +4,10 @@ A cinematic startup overlay for [Pi](https://github.com/earendil-works/pi).
 
 ![pi-intro demo](./demo.gif)
 
+## Requirements
+
+- Pi 0.80.7 or newer
+
 ## Install
 
 ```bash
