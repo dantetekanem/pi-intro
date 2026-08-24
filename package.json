@@ -1,6 +1,6 @@
 {
   "name": "pi-intro",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "A cinematic startup overlay and bottom spacer for Pi.",
   "type": "module",
   "homepage": "https://github.com/dantetekanem/pi-intro#readme",
@@ -18,7 +18,9 @@
     "README.md",
     "demo.gif",
     "index.ts",
+    "intro-command.ts",
     "intro-component.ts",
+    "intro-config.ts",
     "intro-controller.ts",
     "bottom-spacer.ts"
   ],
@@ -28,7 +30,8 @@
   "pi": {
     "extensions": [
       "./index.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/dantetekanem/pi-intro/main/demo.gif"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.80.7",

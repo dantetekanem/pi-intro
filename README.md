@@ -11,7 +11,7 @@ A cinematic startup overlay for [Pi](https://github.com/earendil-works/pi).
 ## Install
 
 ```bash
-pi install git:github.com/dantetekanem/pi-intro
+pi install npm:pi-intro
 ```
 
 Restart Pi. The intro completes automatically, or press any key to skip it.

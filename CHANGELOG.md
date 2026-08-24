@@ -2,10 +2,17 @@
 
 ## Unreleased
 
+## 0.2.4 - 2026-08-23
+
 ### Changed
 
 - Use Pi's public CLI parser for startup input detection instead of maintaining a duplicate flag list.
 - Require Pi 0.80.7 or newer.
+- Add package-gallery preview metadata and document npm installation.
+
+### Fixed
+
+- Include the intro command and persisted configuration modules in the npm package.
 
 ## 0.2.3 - 2026-08-07
 
