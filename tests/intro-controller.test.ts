@@ -24,10 +24,12 @@ test("auto-plays only for initial interactive startup", () => {
   }
 });
 
-test("uses a full-screen capturing overlay so any key reaches the intro", async () => {
+test("captures Escape through the TUI input path even if overlay focus moves", async () => {
   let receivedOptions: unknown;
   let doneCalls = 0;
   let renderRequests = 0;
+  let listenerDisposals = 0;
+  let inputListener: ((data: string) => { consume: true } | undefined) | undefined;
 
   const context: IntroContext = {
     mode: "tui",
@@ -38,11 +40,22 @@ test("uses a full-screen capturing overlay so any key reaches the intro", async 
           {
             terminal: { rows: 30 },
             requestRender: () => { renderRequests += 1; },
+            addInputListener(listener) {
+              inputListener = listener;
+              return () => { listenerDisposals += 1; };
+            },
           },
           theme,
           {},
           () => { doneCalls += 1; },
         );
+
+        assert.ok(inputListener);
+        assert.equal(inputListener("x"), undefined);
+        assert.equal(inputListener("\x1b[27;1:3u"), undefined);
+        assert.equal(doneCalls, 0);
+        assert.deepEqual(inputListener("\x1b"), { consume: true });
+        assert.equal(doneCalls, 1);
         component.dispose();
         return undefined;
       },
@@ -60,8 +73,9 @@ test("uses a full-screen capturing overlay so any key reaches the intro", async 
     col: 0,
     margin: 0,
   });
-  assert.equal(doneCalls, 0);
+  assert.equal(doneCalls, 1);
   assert.equal(renderRequests, 1);
+  assert.equal(listenerDisposals, 1);
 });
 
 test("does not create terminal UI outside TUI mode", async () => {

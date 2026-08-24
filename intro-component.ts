@@ -1,3 +1,5 @@
+import { Key, matchesKey } from "@earendil-works/pi-tui";
+
 export const INTRO_TRANSITION_MS = 1800;
 export const INTRO_HOLD_MS = 750;
 export const INTRO_DURATION_MS = INTRO_TRANSITION_MS + INTRO_HOLD_MS;
@@ -166,6 +168,10 @@ const systemScheduler: IntroScheduler = {
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
+export function isIntroSkipInput(data: string): boolean {
+  return matchesKey(data, Key.escape);
+}
+
 function clamp(value: number, minimum = 0, maximum = 1): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
@@ -314,8 +320,8 @@ export class PiIntroComponent {
     this.host.requestRender();
   }
 
-  handleInput(_data: string): void {
-    this.finish();
+  handleInput(data: string): void {
+    if (isIntroSkipInput(data)) this.finish();
   }
 
   render(width: number): string[] {

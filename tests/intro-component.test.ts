@@ -190,12 +190,15 @@ test("falls back to a compact mark in narrow or short terminals", () => {
   component.dispose();
 });
 
-test("any key skips once and clears every pending timer", () => {
+test("Escape skips once and clears every pending timer", () => {
   const { component, scheduler, state } = createComponent();
   component.start();
 
   component.handleInput("x");
-  component.handleInput("escape");
+  assert.equal(state.done, 0);
+
+  component.handleInput("\x1b[27;1u");
+  component.handleInput("\x1b");
 
   assert.equal(state.done, 1);
   assert.deepEqual(scheduler.cleared, [1, 2]);
@@ -256,12 +259,12 @@ test("a delayed transition callback still schedules a full 750ms visual hold", (
   assert.equal(state.done, 1);
 });
 
-test("any key still skips immediately during the completed-frame hold", () => {
+test("Escape still skips immediately during the completed-frame hold", () => {
   const { component, scheduler, state } = createComponent();
   component.start();
   scheduler.advance(INTRO_TRANSITION_MS);
 
-  component.handleInput("space");
+  component.handleInput("\x1b");
 
   assert.equal(state.done, 1);
   assert.deepEqual(scheduler.cleared, [1, 3]);

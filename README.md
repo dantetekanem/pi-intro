@@ -14,7 +14,7 @@ A cinematic startup overlay for [Pi](https://github.com/earendil-works/pi).
 pi install npm:pi-intro
 ```
 
-Restart Pi. The intro completes automatically, or press any key to skip it.
+Restart Pi. The intro completes automatically, or press Escape to skip it.
 
 ## What it does
 

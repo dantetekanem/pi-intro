@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.5 - 2026-08-24
+
+### Fixed
+
+- Use Escape as the dedicated skip key and capture it through Pi's TUI input path so it remains reliable when overlay focus moves.
+
 ## 0.2.4 - 2026-08-23
 
 ### Changed
