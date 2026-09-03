@@ -4,6 +4,14 @@ A cinematic startup overlay for [Pi](https://github.com/earendil-works/pi).
 
 ![pi-intro demo](./demo.gif)
 
+## Try without installing
+
+```bash
+pi -e npm:pi-intro
+```
+
+This runs the published package for the current Pi invocation without adding it to your project configuration.
+
 ## Requirements
 
 - Pi 0.80.7 or newer
@@ -59,6 +67,10 @@ PI_INTRO_STYLE=hacker PI_INTRO_WORD=ROOTED pi
 ```
 
 Invalid hex colors fall back to your theme's accent.
+
+## Security and data access
+
+Read [SECURITY.md](SECURITY.md) for private vulnerability reporting and [docs/access.md](docs/access.md) for the package's exact file access. `pi-intro` starts no subprocesses and makes no direct network requests.
 
 ## Development
 

@@ -2,6 +2,7 @@
   "name": "pi-intro",
   "version": "0.2.5",
   "description": "A cinematic startup overlay and bottom spacer for Pi.",
+  "license": "MIT",
   "type": "module",
   "homepage": "https://github.com/dantetekanem/pi-intro#readme",
   "repository": {
@@ -22,7 +23,10 @@
     "intro-component.ts",
     "intro-config.ts",
     "intro-controller.ts",
-    "bottom-spacer.ts"
+    "bottom-spacer.ts",
+    "LICENSE",
+    "SECURITY.md",
+    "docs/access.md"
   ],
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.ts"
