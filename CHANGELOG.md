@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Skip the startup intro when Pi resumes a session through `--session`, `--continue`, or `--resume`.
+
 ## 0.2.5 - 2026-08-24
 
 ### Fixed
