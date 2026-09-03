@@ -39,12 +39,21 @@ export function hasInitialCliInput(args = process.argv.slice(2)): boolean {
   return parsed.messages.length > 0 || parsed.fileArgs.length > 0;
 }
 
+export function shouldSkipStartupIntro(args = process.argv.slice(2)): boolean {
+  const parsed = parseArgs(args);
+  return parsed.messages.length > 0
+    || parsed.fileArgs.length > 0
+    || parsed.continue === true
+    || parsed.resume === true
+    || parsed.session !== undefined;
+}
+
 export default function piIntroExtension(
   pi: ExtensionAPI,
   introPlayer = playIntro,
   spacerInstaller = installBottomSpacer,
   commandRegistrar: typeof registerIntroCommand = registerIntroCommand,
-  initialInputDetector = hasInitialCliInput,
+  startupSkipDetector = shouldSkipStartupIntro,
 ): void {
   let generation = 0;
   let removeSpacer: (() => void) | undefined;
@@ -60,7 +69,7 @@ export default function piIntroExtension(
     void (async () => {
       if (event.reason === "startup") {
         sessionStyle = startupStyle();
-        if (!initialInputDetector()) await playWithSessionStyle(context as IntroContext);
+        if (!startupSkipDetector()) await playWithSessionStyle(context as IntroContext);
       }
 
       if (sessionGeneration !== generation || context.mode !== "tui") return;

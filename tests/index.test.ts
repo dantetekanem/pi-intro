@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import piIntroExtension, { hasInitialCliInput } from "../index.ts";
+import piIntroExtension, { hasInitialCliInput, shouldSkipStartupIntro } from "../index.ts";
 
 interface RegisteredHandlers {
   readonly events: Map<string, Function>;
@@ -10,7 +10,7 @@ function register(options: {
   playIntro?: (context: any) => Promise<boolean>;
   installBottomSpacer?: (ui: any) => (() => void) | undefined;
   registerCommand?: (pi: any, getStyle: () => any, apply: (style: any, ctx: any) => Promise<void>) => void;
-  hasInitialInput?: () => boolean;
+  shouldSkipStartupIntro?: () => boolean;
 } = {}): RegisteredHandlers {
   const registered: RegisteredHandlers = { events: new Map() };
   const pi = {
@@ -24,7 +24,7 @@ function register(options: {
     options.playIntro ?? (async () => true),
     options.installBottomSpacer ?? (() => undefined),
     options.registerCommand ?? (() => {}),
-    options.hasInitialInput ?? (() => false),
+    options.shouldSkipStartupIntro ?? (() => false),
   );
   return registered;
 }
@@ -90,7 +90,7 @@ test("session_start stays nonblocking and installs after the startup intro", asy
   assert.equal(installedUi, ui);
 });
 
-test("startup with initial command-line input skips the intro but installs the spacer", async () => {
+test("startup through a resume option skips the intro but installs the spacer", async () => {
   const calls: string[] = [];
   let installationFinished!: () => void;
   const installed = new Promise<void>((resolve) => {
@@ -106,7 +106,7 @@ test("startup with initial command-line input skips the intro but installs the s
       installationFinished();
       return () => {};
     },
-    hasInitialInput: () => true,
+    shouldSkipStartupIntro: () => shouldSkipStartupIntro(["--continue"]),
   });
 
   registered.events.get("session_start")!(
@@ -116,6 +116,19 @@ test("startup with initial command-line input skips the intro but installs the s
   await installed;
 
   assert.deepEqual(calls, ["spacer"]);
+});
+
+test("detects startup invocations that should skip the intro", () => {
+  for (const args of [
+    ["something"],
+    ["@prompt.md"],
+    ["--session", "saved-session.jsonl"],
+    ["--continue"],
+    ["--resume"],
+  ]) {
+    assert.equal(shouldSkipStartupIntro(args), true, args.join(" "));
+  }
+  assert.equal(shouldSkipStartupIntro([]), false);
 });
 
 test("stale startup intro completion does not install a spacer", async () => {

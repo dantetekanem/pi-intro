@@ -91,7 +91,7 @@ export async function runIntroCommand(ui: IntroCommandUi, options: IntroCommandO
 
   await options.apply(next);
 
-  ui.notify("Intro saved — it will greet you on every startup", "info");
+  ui.notify("Intro saved — it will greet you when Pi starts without resuming a session", "info");
 }
 
 /** Register the /pi-intro command against the real ExtensionAPI. */

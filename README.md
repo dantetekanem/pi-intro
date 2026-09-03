@@ -27,13 +27,14 @@ Restart Pi. The intro completes automatically, or press Escape to skip it.
 ## What it does
 
 - Lets Pi continue its remaining post-TUI startup work behind the overlay instead of blocking startup on the animation.
+- Skips the overlay when Pi resumes a session through `--session`, `--continue`, or `--resume`.
 - Starts at Pi's supported `session_start` hook, so a brief normal Pi frame may appear first; initial extension and skill discovery has already completed.
 
 ## Customization
 
 ### Interactive: `/pi-intro`
 
-Run `/pi-intro` inside Pi to pick a preset (or a custom word), then edit the bottom message in a prefilled editor — empty hides it. **Enter persists immediately** to `~/.pi/agent/pi-intro.json` (no save key needed) and the intro replays as a live preview. The choice greets you on every startup; env vars below override the saved file when set.
+Run `/pi-intro` inside Pi to pick a preset (or a custom word), then edit the bottom message in a prefilled editor — empty hides it. **Enter persists immediately** to `~/.pi/agent/pi-intro.json` (no save key needed) and the intro replays as a live preview. The choice greets you when Pi starts without resuming a session; env vars below override the saved file when set.
 
 ### Environment variables
 
