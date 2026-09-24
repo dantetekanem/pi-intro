@@ -1,23 +1,30 @@
 // Confirms the intro is fully gone after it finishes: real PiIntroComponent,
 // real timers, real overlay host wiring (showOverlay/hideOverlay against a
 // real TUI). After completion the overlay stack must be empty, every timer
-// cleared, and the rendered output must contain no intro pixels.
+// cleared, the rendered output must contain no intro pixels, and typing must
+// reach the editor that is on screen.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Container, TUI } from "@earendil-works/pi-tui";
 import type { Component } from "@earendil-works/pi-tui";
 import { PiIntroComponent, INTRO_DURATION_MS } from "../intro-component.ts";
-import { FULL_SCREEN_OVERLAY_OPTIONS } from "../intro-controller.ts";
+import { FULL_SCREEN_OVERLAY_OPTIONS, playIntro, type IntroContext } from "../intro-controller.ts";
 
 class StubTerminal {
   readonly writes: string[] = [];
   readonly columns: number;
   readonly rows: number;
+  private onInput: ((data: string) => void) | undefined;
   constructor(columns: number, rows: number) {
     this.columns = columns;
     this.rows = rows;
   }
-  start(_onInput: (data: string) => void, _onResize: () => void): void {}
+  start(onInput: (data: string) => void, _onResize: () => void): void {
+    this.onInput = onInput;
+  }
+  type(data: string): void {
+    this.onInput?.(data);
+  }
   stop(): void {}
   async drainInput(): Promise<void> {}
   write(data: string): void {
@@ -34,6 +41,17 @@ class StubTerminal {
   clearScreen(): void {}
   setTitle(): void {}
   setProgress(): void {}
+}
+
+class RecordingEditor implements Component {
+  readonly received: string[] = [];
+  render(): string[] {
+    return [this.received.join("")];
+  }
+  invalidate(): void {}
+  handleInput(data: string): void {
+    this.received.push(data);
+  }
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -132,4 +150,53 @@ test("intro overlay is gone after it finishes: stack empty, timers cleared, no i
   assert.equal(liveIntervals, 0, "dispose/restart starts no timers");
   assert.equal(liveTimeouts, 0);
   assert.equal(terminal.writes.length, writesBefore, "no further repaints requested");
+});
+
+test("typing reaches the on-screen editor when extensions replace it during the intro", async () => {
+  const terminal = new StubTerminal(80, 14);
+  const tui = new TUI(terminal as never);
+  const editorContainer = new Container();
+  tui.addChild(editorContainer);
+
+  // Mirror pi's setCustomEditorComponent: replace the mounted editor, then focus it.
+  const installEditor = () => {
+    const editor = new RecordingEditor();
+    editorContainer.clear();
+    editorContainer.addChild(editor);
+    tui.setFocus(editor);
+    return editor;
+  };
+  const startupEditor = installEditor();
+  tui.start();
+
+  // Mirror pi's showExtensionCustom overlay branch.
+  const context: IntroContext = {
+    mode: "tui",
+    ui: {
+      custom(factory, options) {
+        return new Promise((resolve) => {
+          let component: ReturnType<typeof factory> | undefined;
+          component = factory(tui, theme, {}, (value) => {
+            tui.hideOverlay();
+            resolve(value);
+            component?.dispose();
+          });
+          tui.showOverlay(component as Component, options.overlayOptions as never);
+        });
+      },
+    },
+  };
+  const played = playIntro(context);
+
+  // Two extensions install their own editors while the intro plays.
+  installEditor();
+  const onScreenEditor = installEditor();
+
+  terminal.type("\x1b");
+  await played;
+  terminal.type("a");
+
+  assert.equal(tui.overlayStack.length, 0, "intro overlay removed from the stack");
+  assert.deepEqual(onScreenEditor.received, ["a"], "typing reaches the editor on screen");
+  assert.deepEqual(startupEditor.received, [], "the replaced startup editor gets nothing");
 });

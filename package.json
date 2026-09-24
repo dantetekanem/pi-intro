@@ -1,6 +1,6 @@
 {
   "name": "pi-intro",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "A cinematic startup overlay and bottom spacer for Pi.",
   "license": "MIT",
   "type": "module",

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.7 - 2026-09-24
+
+### Fixed
+
+- Keep keyboard focus on Pi's editor while the intro plays, so typing still works when other extensions replace the editor during the intro.
+
 ## 0.2.6 - 2026-09-03
 
 ### Changed

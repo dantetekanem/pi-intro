@@ -66,7 +66,7 @@ test("captures Escape through the TUI input path even if overlay focus moves", a
   assert.deepEqual(receivedOptions, FULL_SCREEN_OVERLAY_OPTIONS);
   assert.equal(FULL_SCREEN_OVERLAY_OPTIONS.overlay, true);
   assert.deepEqual(FULL_SCREEN_OVERLAY_OPTIONS.overlayOptions, {
-    nonCapturing: false,
+    nonCapturing: true,
     width: "100%",
     maxHeight: "100%",
     row: 0,
