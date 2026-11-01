@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test, { beforeEach } from "node:test";
 import piIntroExtension, { hasInitialCliInput, shouldSkipStartupIntro } from "../index.ts";
+
+beforeEach((t) => {
+  const originalEnv = process.env;
+  process.env = { ...originalEnv };
+  delete process.env.PI_INTRO_DISABLE;
+  t.after(() => {
+    process.env = originalEnv;
+  });
+});
 
 interface RegisteredHandlers {
   readonly events: Map<string, Function>;
@@ -130,6 +142,48 @@ test("detects startup invocations that should skip the intro", () => {
   }
   assert.equal(shouldSkipStartupIntro([]), false);
 });
+
+for (const value of [undefined, "0", "1", "true"]) {
+  test(`PI_INTRO_DISABLE=${value ?? "(unset)"} controls startup playback only`, async (t) => {
+    if (value !== undefined) process.env.PI_INTRO_DISABLE = value;
+    const home = mkdtempSync(join(tmpdir(), "pi-intro-startup-"));
+    process.env.HOME = home;
+    t.after(() => rmSync(home, { recursive: true, force: true }));
+
+    const calls: string[] = [];
+    let applyStyle!: (style: any, ctx: any) => Promise<void>;
+    let installationFinished!: () => void;
+    const installed = new Promise<void>((resolve) => {
+      installationFinished = resolve;
+    });
+    const registered = register({
+      playIntro: async () => {
+        calls.push("intro");
+        return true;
+      },
+      installBottomSpacer: () => {
+        calls.push("spacer");
+        installationFinished();
+        return () => {};
+      },
+      registerCommand: (_pi, _getStyle, apply) => {
+        applyStyle = apply;
+      },
+      shouldSkipStartupIntro: () => shouldSkipStartupIntro([]),
+    });
+    const context = { mode: "tui", ui: {} };
+
+    registered.events.get("session_start")!({ reason: "startup" }, context);
+    await installed;
+
+    const startupCalls = value === "1" ? ["spacer"] : ["intro", "spacer"];
+    assert.deepEqual(calls, startupCalls);
+
+    await applyStyle({ word: "QUIET" }, context);
+
+    assert.deepEqual(calls, [...startupCalls, "intro"]);
+  });
+}
 
 test("stale startup intro completion does not install a spacer", async () => {
   let finishIntro!: (played: boolean) => void;

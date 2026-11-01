@@ -40,6 +40,14 @@ Run `/pi-intro` inside Pi to pick a preset (or a custom word), then edit the bot
 
 Pick a preset with `PI_INTRO_STYLE`, or override the pieces with `PI_INTRO_WORD`, `PI_INTRO_COLOR`, and `PI_INTRO_TAGLINE`. Env vars override the saved `~/.pi/agent/pi-intro.json`. Restart Pi after changing them.
 
+For a quiet launch without uninstalling the extension:
+
+```bash
+PI_INTRO_DISABLE=1 pi
+```
+
+Only the exact value `1` disables automatic startup playback. Unset, `0`, and other values keep the usual startup behavior, including CLI-input and resume suppression. The bottom spacer still installs, and applying a style through `/pi-intro` still plays a preview. This flag does not change saved settings.
+
 ### Presets
 
 | `PI_INTRO_STYLE` | Big word | Color |

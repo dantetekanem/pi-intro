@@ -41,7 +41,8 @@ export function hasInitialCliInput(args = process.argv.slice(2)): boolean {
 
 export function shouldSkipStartupIntro(args = process.argv.slice(2)): boolean {
   const parsed = parseArgs(args);
-  return parsed.messages.length > 0
+  return process.env.PI_INTRO_DISABLE === "1"
+    || parsed.messages.length > 0
     || parsed.fileArgs.length > 0
     || parsed.continue === true
     || parsed.resume === true
